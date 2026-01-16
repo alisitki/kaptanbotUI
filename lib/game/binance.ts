@@ -11,12 +11,13 @@ const BINANCE_ENDPOINTS = [
     'https://api3.binance.com',
     'https://api.binance.me',
     'https://api.binance.cc',
+    'https://api.binance.info',
     'https://data-api.binance.vision',
 ];
 const API_PATH = '/api/v3';
 const FETCH_TIMEOUT = 8000; // 8 seconds
-const MAX_RETRIES = 3; // Increased to cover endpoint switching
-const RETRY_DELAYS = [500, 1000, 2000];
+const MAX_RETRIES = 10; // High enough to try every endpoint if 451 occurs
+const RETRY_DELAYS = [200, 500, 1000];
 
 // =============================================================================
 // CACHE
