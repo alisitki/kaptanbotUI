@@ -1,7 +1,0 @@
-{
-  "functions": {
-    "app/api/game/start/route.ts": {
-      "regions": ["fra1"]
-    }
-  }
-}

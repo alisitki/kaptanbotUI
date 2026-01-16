@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { fetchKlines, generateRandomStartTime } from '@/lib/game/binance';
 
+export const preferredRegion = 'fra1'; // Frankfurt, Germany - to bypass Binance region blocks
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
