@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Gamepad2, Trophy, Flame, Target } from "lucide-react";
 import { Sidebar } from "@/components/altuq/layout/Sidebar";
+import Link from "next/link";
 
 export default function GamesPage() {
     return (
@@ -59,10 +60,12 @@ export default function GamesPage() {
                                                 <span>Zorluk: Orta</span>
                                             </div>
                                         </div>
-                                        <Button className="w-fit mt-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
-                                            <Gamepad2 className="w-4 h-4 mr-2" />
-                                            Oyna
-                                        </Button>
+                                        <Link href="/games/play">
+                                            <Button className="w-fit mt-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+                                                <Gamepad2 className="w-4 h-4 mr-2" />
+                                                Oyna
+                                            </Button>
+                                        </Link>
                                     </div>
                                     <div className="relative w-full md:w-1/3 min-h-[200px] bg-gradient-to-br from-emerald-900/20 to-black/40 flex items-center justify-center border-l border-white/5">
                                         {/* Mock Game Visual */}
