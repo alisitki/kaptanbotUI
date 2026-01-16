@@ -10,7 +10,8 @@ import {
     PieChart,
     History,
     Settings,
-    LogOut
+    LogOut,
+    Gamepad2
 } from "lucide-react";
 
 export function Sidebar() {
@@ -22,6 +23,7 @@ export function Sidebar() {
         { name: "Takip & Hedef", href: "/altuq/watch", icon: ScanEye },
         { name: "Portföy", href: "/altuq/portfolio", icon: PieChart },
         { name: "İşlemler", href: "/altuq/trades", icon: History },
+        { name: "Oyunlar", href: "/games", icon: Gamepad2 },
     ];
 
     return (
