@@ -1,120 +1,251 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card } from "@/components/ui/card";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Sidebar } from "@/components/altuq/layout/Sidebar";
-import { ArrowLeft, Play, TrendingUp, TrendingDown, RefreshCcw, Settings2 } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { ArrowLeft, RefreshCcw, AlertTriangle } from "lucide-react";
 import Link from "next/link";
-import {
-    AreaChart,
-    Area,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    ReferenceLine
-} from "recharts";
 import { toast } from "sonner";
 
+// Game Components
+import { SessionHeader } from "@/components/game/SessionHeader";
+import { TradePanel } from "@/components/game/TradePanel";
+import { GameChart } from "@/components/game/Chart";
+import { EndModal } from "@/components/game/EndModal";
+
+// Game Engine & Types
+import {
+    GameState,
+    GameConfig,
+    GameStartResponse,
+    SessionSummary,
+    DEFAULT_CONFIG,
+    INITIAL_EQUITY,
+    TOTAL_CANDLES,
+} from "@/lib/game/types";
+import {
+    createInitialState,
+    openPosition,
+    closePosition,
+    nextCandle,
+    computeUnrealized,
+    calculateEquity,
+    computeStats,
+} from "@/lib/game/engine";
+import { saveSession, generateSessionId } from "@/lib/game/storage";
+
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
+
 export default function PlayGamePage() {
+    const router = useRouter();
+
     // Game State
-    const [fullData, setFullData] = useState<any[]>([]);
+    const [gameState, setGameState] = useState<GameState | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [currentIndex, setCurrentIndex] = useState(50); // Start with 50 candles
-    const [balance, setBalance] = useState(10000); // Virtual 10k USDT
-    const [position, setPosition] = useState<{ type: 'LONG' | 'SHORT', entry: number, size: number } | null>(null);
-    const [history, setHistory] = useState<any[]>([]);
-    const [dialogOpen, setDialogOpen] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [showEndModal, setShowEndModal] = useState(false);
 
-    // Fetch Game Data
-    const loadGame = async (startTime?: number) => {
+    // Config (can be changed mid-game)
+    const [config, setConfig] = useState<GameConfig>(DEFAULT_CONFIG);
+
+    // Processing lock ref (prevents rapid button spam)
+    const processingLock = useRef(false);
+
+    // =============================================================================
+    // DATA LOADING
+    // =============================================================================
+
+    const loadGame = useCallback(async (startTime?: number, mode: 'random' | 'date' = 'random') => {
         try {
-            setDialogOpen(false);
             setIsLoading(true);
-            setBalance(10000); // Reset balance
-            setPosition(null);
-            setHistory([]);
-            setCurrentIndex(50);
+            setLoadError(null);
+            setShowEndModal(false);
 
-            const url = startTime
-                ? `/api/game/start?startTime=${startTime}`
-                : '/api/game/start';
+            const params = new URLSearchParams({
+                symbol: 'BTCUSDT',
+                interval: '1h',
+                mode,
+            });
 
-            const res = await fetch(url);
-            if (!res.ok) throw new Error("Veri hatası");
-            const data = await res.json();
-
-            if (data.length === 0) {
-                toast.error("Bu tarih için veri bulunamadı.");
-                return;
+            if (startTime) {
+                params.set('startTime', startTime.toString());
             }
 
-            setFullData(data);
-            toast.success("Oyun Başladı", { description: startTime ? "Seçilen tarih yüklendi" : "Rastgele senaryo yüklendi" });
+            const res = await fetch(`/api/game/start?${params}`);
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.error || 'Veri yüklenemedi');
+            }
+
+            const response = data as GameStartResponse;
+
+            if (!response.candles || response.candles.length < 50) {
+                throw new Error('Yetersiz veri');
+            }
+
+            // Create initial game state
+            const initialState = createInitialState(
+                response.candles,
+                response.mode,
+                response.startTime,
+                config,
+                response.symbol,
+                response.interval
+            );
+
+            setGameState(initialState);
+            toast.success("Oyun Başladı", {
+                description: mode === 'random' ? "Rastgele tarih yüklendi" : "Seçilen tarih yüklendi",
+            });
+
         } catch (error) {
-            console.error(error);
-            toast.error("Veri yüklenemedi.");
+            console.error('Game load error:', error);
+            setLoadError(error instanceof Error ? error.message : 'Bilinmeyen hata');
+            toast.error("Yükleme Hatası", {
+                description: error instanceof Error ? error.message : 'Veri yüklenemedi',
+            });
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [config]);
 
-    // Initial Load
+    // Initial load
     useEffect(() => {
         loadGame();
     }, []);
 
-    const currentData = fullData.slice(0, currentIndex);
-    const currentPrice = currentData.length > 0 ? currentData[currentData.length - 1].price : 0;
+    // =============================================================================
+    // GAME ACTIONS
+    // =============================================================================
 
-    // Actions
-    const handleNextCandle = () => {
-        if (currentIndex < fullData.length) {
-            setCurrentIndex(prev => prev + 1);
-        } else {
-            toast.info("Oyun Bitti!", { description: `Toplam PnL: $${(balance - 10000).toFixed(2)}` });
+    const executeAction = useCallback((action: () => GameState | null) => {
+        if (processingLock.current || !gameState || gameState.isEnded) return;
+
+        processingLock.current = true;
+        setIsProcessing(true);
+
+        try {
+            const newState = action();
+            if (newState) {
+                // Update config if changed
+                const stateWithConfig = { ...newState, config };
+                setGameState(stateWithConfig);
+
+                // Check for game end
+                if (stateWithConfig.isEnded) {
+                    handleGameEnd(stateWithConfig);
+                }
+            }
+        } finally {
+            processingLock.current = false;
+            setIsProcessing(false);
         }
-    };
+    }, [gameState, config]);
 
-    const handleBuy = () => {
-        if (position) return toast.error("Zaten açık bir işlem var!");
-        setPosition({ type: 'LONG', entry: currentPrice, size: 1 }); // Fixed 1 BTC size for simplicity
-        toast.success("LONG İşlem Açıldı", { description: `@ $${currentPrice.toFixed(2)}` });
-        handleNextCandle();
-    };
+    const handleLong = useCallback(() => {
+        if (!gameState) return;
+        executeAction(() => openPosition(gameState, 'LONG'));
+        toast.success("LONG Açıldı");
+    }, [gameState, executeAction]);
 
-    const handleSell = () => {
-        if (position) return toast.error("Zaten açık bir işlem var!");
-        setPosition({ type: 'SHORT', entry: currentPrice, size: 1 });
-        toast.success("SHORT İşlem Açıldı", { description: `@ $${currentPrice.toFixed(2)}` });
-        handleNextCandle();
-    };
+    const handleShort = useCallback(() => {
+        if (!gameState) return;
+        executeAction(() => openPosition(gameState, 'SHORT'));
+        toast.success("SHORT Açıldı");
+    }, [gameState, executeAction]);
 
-    const handleClose = () => {
-        if (!position) return;
+    const handleClose = useCallback(() => {
+        if (!gameState) return;
+        executeAction(() => closePosition(gameState));
+    }, [gameState, executeAction]);
 
-        let pnl = 0;
-        if (position.type === 'LONG') {
-            pnl = (currentPrice - position.entry) * position.size;
-        } else {
-            pnl = (position.entry - currentPrice) * position.size;
-        }
+    const handleNext = useCallback(() => {
+        if (!gameState) return;
+        executeAction(() => nextCandle(gameState));
+    }, [gameState, executeAction]);
 
-        setBalance(prev => prev + pnl);
-        setHistory(prev => [...prev, { ...position, exit: currentPrice, pnl }]);
-        setPosition(null);
-        toast.success("İşlem Kapatıldı", {
-            description: `PnL: ${pnl > 0 ? '+' : ''}$${pnl.toFixed(2)}`
-        });
-        handleNextCandle();
-    };
+    const handleConfigChange = useCallback((changes: Partial<GameConfig>) => {
+        setConfig(prev => ({ ...prev, ...changes }));
+    }, []);
 
-    // Loading State
+    // =============================================================================
+    // GAME END
+    // =============================================================================
+
+    const handleGameEnd = useCallback((state: GameState) => {
+        const stats = computeStats(state.trades, INITIAL_EQUITY, state.totalFeesPaid, state.cash);
+
+        // Save session to localStorage
+        const firstCandle = state.candles[0];
+        const lastCandle = state.candles[state.currentIndex];
+
+        const summary: SessionSummary = {
+            id: generateSessionId(),
+            startDate: new Date(firstCandle.t).toISOString(),
+            endDate: new Date(lastCandle.t).toISOString(),
+            mode: state.mode,
+            pnl: stats.totalPnl,
+            returnPct: stats.returnPct,
+            maxDrawdown: stats.maxDrawdown,
+            winRate: stats.winRate,
+            totalTrades: stats.totalTrades,
+            timestamp: Date.now(),
+        };
+
+        saveSession(summary);
+        setShowEndModal(true);
+    }, []);
+
+    // =============================================================================
+    // KEYBOARD CONTROLS
+    // =============================================================================
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Ignore if typing in input
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+            switch (e.key.toLowerCase()) {
+                case 'n':
+                    handleNext();
+                    break;
+                case 'l':
+                    if (!gameState?.position) handleLong();
+                    break;
+                case 's':
+                    if (!gameState?.position) handleShort();
+                    break;
+                case 'c':
+                    if (gameState?.position) handleClose();
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleNext, handleLong, handleShort, handleClose, gameState?.position]);
+
+    // =============================================================================
+    // COMPUTED VALUES
+    // =============================================================================
+
+    const currentCandle = gameState?.candles[gameState.currentIndex];
+    const currentPrice = currentCandle?.c ?? 0;
+    const unrealizedPnl = gameState ? computeUnrealized(gameState.position, currentPrice) : 0;
+    const equity = gameState ? calculateEquity(gameState) : INITIAL_EQUITY;
+    const stats = gameState
+        ? computeStats(gameState.trades, INITIAL_EQUITY, gameState.totalFeesPaid, gameState.cash)
+        : null;
+
+    // =============================================================================
+    // LOADING STATE
+    // =============================================================================
+
     if (isLoading) {
         return (
             <div className="flex h-screen w-full bg-[#020202] items-center justify-center">
@@ -127,20 +258,22 @@ export default function PlayGamePage() {
         );
     }
 
-    // Error State (No Data)
-    if (fullData.length === 0) {
+    // =============================================================================
+    // ERROR STATE
+    // =============================================================================
+
+    if (loadError || !gameState) {
         return (
             <div className="flex h-screen w-full bg-[#020202] items-center justify-center">
-                <div className="text-center space-y-4">
+                <div className="text-center space-y-4 max-w-md">
+                    <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto" />
                     <p className="text-rose-400 font-bold text-lg">Veri Yüklenemedi</p>
-                    <p className="text-zinc-500 max-w-md mx-auto">
-                        Binance ile bağlantı kurulamadı veya seçilen tarih için veri bulunamadı.
-                        Lütfen internet bağlantınızı kontrol edin veya farklı bir senaryo deneyin.
+                    <p className="text-zinc-500">
+                        {loadError || 'Binance API ile bağlantı kurulamadı. Lütfen tekrar deneyin.'}
                     </p>
                     <Button
-                        variant="outline"
                         onClick={() => loadGame()}
-                        className="bg-white/5 border-white/10 hover:bg-white/10 text-white"
+                        className="bg-indigo-600 hover:bg-indigo-500"
                     >
                         <RefreshCcw className="w-4 h-4 mr-2" /> Tekrar Dene
                     </Button>
@@ -149,203 +282,78 @@ export default function PlayGamePage() {
         );
     }
 
+    // =============================================================================
+    // MAIN RENDER
+    // =============================================================================
+
     return (
         <div className="flex h-screen w-full bg-[#020202] dark font-sans antialiased text-white selection:bg-indigo-500/30 overflow-hidden">
             <Sidebar />
 
             <div className="flex flex-1 flex-col pl-64 h-full transition-all duration-300">
-                <main className="flex-1 h-full flex flex-col p-6 relative">
+                {/* Session Header */}
+                <SessionHeader
+                    startTime={gameState.startTime}
+                    currentTime={currentCandle?.t ?? gameState.startTime}
+                    currentIndex={gameState.currentIndex}
+                    mode={gameState.mode}
+                />
 
-                    {/* Header Bar */}
-                    <div className="flex items-center justify-between mb-6 z-10">
-                        <div className="flex items-center gap-4">
-                            <Link href="/games">
-                                <Button variant="ghost" size="icon" className="hover:bg-white/10">
-                                    <ArrowLeft className="w-5 h-5 text-zinc-400" />
-                                </Button>
-                            </Link>
-                            <div>
-                                <h1 className="text-xl font-bold text-white">Price Action Master</h1>
-                                <div className="flex items-center gap-2 text-sm text-zinc-500">
-                                    <span>Mevcut mum: {currentIndex} / {fullData.length}</span>
-                                    {fullData.length > 0 && (
-                                        <>
-                                            <span className="text-zinc-700 mx-1">•</span>
-                                            <span className="text-emerald-500 font-mono">
-                                                {new Date(fullData[0].time).toLocaleDateString("tr-TR")}
-                                            </span>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-6">
-
-                            {/* Settings Dialog */}
-                            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                                <DialogTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="border-white/10 hover:bg-white/5 text-zinc-400"
-                                    >
-                                        <Settings2 className="w-4 h-4 mr-2" /> Tarih & Zaman
-                                    </Button>
-                                </DialogTrigger>
-                                <DialogContent className="bg-[#0A0A0A] border-white/10 text-white sm:max-w-[425px]">
-                                    <DialogHeader>
-                                        <DialogTitle>Zaman Ayarı</DialogTitle>
-                                        <DialogDescription className="text-zinc-500">
-                                            Piyasa koşullarını rastgele belirleyebilir veya belirli bir tarihten başlatabilirsiniz.
-                                        </DialogDescription>
-                                    </DialogHeader>
-
-                                    <div className="grid gap-6 py-4">
-                                        <Button
-                                            variant="secondary"
-                                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white h-12"
-                                            onClick={() => loadGame()}
-                                        >
-                                            <RefreshCcw className="w-4 h-4 mr-2" />
-                                            Rastgele Başlat
-                                        </Button>
-
-                                        <div className="relative">
-                                            <div className="absolute inset-0 flex items-center">
-                                                <span className="w-full border-t border-white/10" />
-                                            </div>
-                                            <div className="relative flex justify-center text-xs uppercase">
-                                                <span className="bg-[#0A0A0A] px-2 text-zinc-500">Veya Tarih Seç</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-4">
-                                            <div className="space-y-2">
-                                                <Label className="text-xs text-zinc-400">Başlangıç Tarihi</Label>
-                                                <Input
-                                                    type="date"
-                                                    className="bg-zinc-900 border-white/10 text-white"
-                                                    onChange={(e) => {
-                                                        if (e.target.value) {
-                                                            const ts = new Date(e.target.value).getTime();
-                                                            loadGame(ts);
-                                                        }
-                                                    }}
-                                                />
-                                            </div>
-                                            <p className="text-[10px] text-zinc-600">
-                                                Seçilen tarihten itibaren 500 saatlik veri yüklenecektir.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </DialogContent>
-                            </Dialog>
-
-                            <div className="text-right">
-                                <div className="text-xs text-zinc-500 uppercase font-bold">Bakiye</div>
-                                <div className="text-2xl font-mono font-bold text-emerald-400">${balance.toFixed(2)}</div>
-                            </div>
-                            {position && (
-                                <div className="text-right px-4 py-1 rounded bg-white/5 border border-white/10">
-                                    <div className="text-xs text-zinc-500 uppercase font-bold">Açık PnL</div>
-                                    <div className={`text-xl font-mono font-bold ${(position.type === 'LONG' ? (currentPrice - position.entry) : (position.entry - currentPrice)) >= 0
-                                        ? 'text-emerald-400' : 'text-rose-400'
-                                        }`}>
-                                        {((position.type === 'LONG' ? (currentPrice - position.entry) : (position.entry - currentPrice))).toFixed(2)}$
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                {/* Main Content */}
+                <main className="flex-1 h-full flex flex-col p-4 relative overflow-hidden">
+                    {/* Back Button */}
+                    <div className="absolute top-2 left-2 z-20">
+                        <Link href="/games">
+                            <Button variant="ghost" size="icon" className="hover:bg-white/10">
+                                <ArrowLeft className="w-5 h-5 text-zinc-400" />
+                            </Button>
+                        </Link>
                     </div>
 
-                    {/* Game Area */}
-                    <div className="flex-1 grid grid-cols-4 gap-6 min-h-0 z-10">
-
-                        {/* Left: Chart */}
-                        <Card className="col-span-3 border-white/5 bg-[#0A0A0A]/50 backdrop-blur-md flex flex-col overflow-hidden relative">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={currentData} margin={{ top: 20, right: 60, left: 0, bottom: 0 }}>
-                                    <defs>
-                                        <linearGradient id="colorGame" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" vertical={false} />
-                                    <YAxis
-                                        orientation="right"
-                                        domain={['auto', 'auto']}
-                                        tick={{ fill: '#52525b', fontSize: 11 }}
-                                        tickFormatter={(val) => val.toFixed(0)}
-                                    />
-                                    <Tooltip contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', color: '#fff' }} />
-                                    <Area type="monotone" dataKey="price" stroke="#3b82f6" fillOpacity={1} fill="url(#colorGame)" strokeWidth={2} />
-                                    <ReferenceLine y={currentPrice} stroke="#fbbf24" strokeDasharray="3 3" />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                            <div className="absolute top-4 left-4 bg-black/40 px-3 py-1 rounded border border-white/5 text-white font-mono">
-                                ${currentPrice.toFixed(2)}
-                            </div>
-                        </Card>
-
-                        {/* Right: Controls */}
-                        <div className="col-span-1 flex flex-col gap-4">
-
-                            {/* Actions */}
-                            <Card className="p-4 border-white/5 bg-[#0A0A0A]/50 backdrop-blur-md space-y-4">
-                                <h3 className="text-sm font-bold text-zinc-400 uppercase mb-2">Aksiyonlar</h3>
-
-                                {!position ? (
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <Button onClick={handleBuy} className="bg-emerald-600 hover:bg-emerald-500 h-12 text-lg font-bold">
-                                            <TrendingUp className="mr-2 h-5 w-5" /> LONG
-                                        </Button>
-                                        <Button onClick={handleSell} className="bg-rose-600 hover:bg-rose-500 h-12 text-lg font-bold">
-                                            <TrendingDown className="mr-2 h-5 w-5" /> SHORT
-                                        </Button>
-                                    </div>
-                                ) : (
-                                    <Button onClick={handleClose} variant="secondary" className="w-full h-12 text-lg font-bold bg-zinc-700 hover:bg-zinc-600 text-white">
-                                        POZİSYONU KAPAT
-                                    </Button>
-                                )}
-
-                                <Button onClick={handleNextCandle} variant="outline" className="w-full border-white/10 hover:bg-white/5 text-zinc-300">
-                                    <Play className="mr-2 h-4 w-4" /> Sonraki Mum
-                                </Button>
-
-                                <div className="text-xs text-center text-zinc-600 mt-2">
-                                    Her işlem 1 BTC büyüklüğündedir.
-                                </div>
-                            </Card>
-
-                            {/* History */}
-                            <Card className="flex-1 border-white/5 bg-[#0A0A0A]/50 backdrop-blur-md flex flex-col overflow-hidden">
-                                <div className="p-3 border-b border-white/5 text-xs font-bold text-zinc-500 uppercase">
-                                    İşlem Geçmişi
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                                    {history.slice().reverse().map((trade, i) => (
-                                        <div key={i} className="flex items-center justify-between p-2 rounded bg-white/5 text-sm">
-                                            <Badge variant={trade.type === 'LONG' ? 'default' : 'destructive'} className="text-[10px] h-5">
-                                                {trade.type}
-                                            </Badge>
-                                            <span className={`font-mono font-bold ${trade.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                                {trade.pnl > 0 ? '+' : ''}{trade.pnl.toFixed(2)}
-                                            </span>
-                                        </div>
-                                    ))}
-                                    {history.length === 0 && (
-                                        <div className="text-center text-zinc-600 py-8 text-sm">Henüz işlem yok</div>
-                                    )}
-                                </div>
-                            </Card>
-
+                    {/* Game Layout */}
+                    <div className="flex-1 grid grid-cols-4 gap-4 min-h-0">
+                        {/* Chart (3 columns) */}
+                        <div className="col-span-3 h-full">
+                            <GameChart
+                                candles={gameState.candles}
+                                currentIndex={gameState.currentIndex}
+                                position={gameState.position}
+                            />
                         </div>
 
+                        {/* Trade Panel (1 column) */}
+                        <div className="col-span-1 h-full overflow-y-auto">
+                            <TradePanel
+                                equity={equity}
+                                cash={gameState.cash}
+                                position={gameState.position}
+                                unrealizedPnl={unrealizedPnl}
+                                trades={gameState.trades}
+                                totalFeesPaid={gameState.totalFeesPaid}
+                                config={config}
+                                isProcessing={isProcessing}
+                                isEnded={gameState.isEnded}
+                                onLong={handleLong}
+                                onShort={handleShort}
+                                onClose={handleClose}
+                                onNext={handleNext}
+                                onConfigChange={handleConfigChange}
+                            />
+                        </div>
                     </div>
                 </main>
             </div>
+
+            {/* End Game Modal */}
+            {stats && (
+                <EndModal
+                    isOpen={showEndModal}
+                    stats={stats}
+                    endReason={gameState.endReason}
+                    onPlayAgain={() => loadGame()}
+                    onChooseDate={() => router.push('/games')}
+                />
+            )}
         </div>
     );
 }

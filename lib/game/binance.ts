@@ -1,0 +1,275 @@
+// =============================================================================
+// BINANCE API HELPER - Hardened Fetch for Game Data
+// =============================================================================
+
+import { Candle, GameApiError } from './types';
+
+const BINANCE_API = 'https://api.binance.com/api/v3';
+const FETCH_TIMEOUT = 8000; // 8 seconds
+const MAX_RETRIES = 2;
+const RETRY_DELAYS = [1000, 2000]; // Exponential backoff
+
+// =============================================================================
+// CACHE
+// =============================================================================
+
+interface CacheEntry {
+    data: Candle[];
+    timestamp: number;
+}
+
+const cache = new Map<string, CacheEntry>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCacheKey(symbol: string, interval: string, startTime: number): string {
+    return `${symbol}-${interval}-${startTime}`;
+}
+
+function getFromCache(key: string): Candle[] | null {
+    const entry = cache.get(key);
+    if (!entry) return null;
+
+    if (Date.now() - entry.timestamp > CACHE_TTL) {
+        cache.delete(key);
+        return null;
+    }
+
+    return entry.data;
+}
+
+function setCache(key: string, data: Candle[]): void {
+    cache.set(key, { data, timestamp: Date.now() });
+}
+
+// =============================================================================
+// FETCH WITH TIMEOUT
+// =============================================================================
+
+async function fetchWithTimeout(url: string, timeout: number): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        return response;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+// =============================================================================
+// DATA VALIDATION
+// =============================================================================
+
+function validateKlines(data: unknown): data is Array<unknown[]> {
+    if (!Array.isArray(data)) return false;
+    if (data.length === 0) return false;
+
+    // Check first element structure
+    const first = data[0];
+    if (!Array.isArray(first) || first.length < 6) return false;
+
+    return true;
+}
+
+function parseKlines(rawData: Array<unknown[]>): Candle[] {
+    return rawData.map(kline => ({
+        t: Number(kline[0]),  // Open time
+        o: parseFloat(String(kline[1])),
+        h: parseFloat(String(kline[2])),
+        l: parseFloat(String(kline[3])),
+        c: parseFloat(String(kline[4])),
+        v: parseFloat(String(kline[5])),
+    }));
+}
+
+function validateCandles(candles: Candle[]): boolean {
+    if (candles.length === 0) return false;
+
+    // Check for duplicate timestamps
+    const timestamps = new Set<number>();
+    for (const candle of candles) {
+        if (timestamps.has(candle.t)) {
+            console.error('Duplicate timestamp found:', candle.t);
+            return false;
+        }
+        timestamps.add(candle.t);
+    }
+
+    // Check ascending order
+    for (let i = 1; i < candles.length; i++) {
+        if (candles[i].t <= candles[i - 1].t) {
+            console.error('Timestamps not in ascending order');
+            return false;
+        }
+    }
+
+    // Check for NaN values
+    for (const candle of candles) {
+        if (isNaN(candle.o) || isNaN(candle.h) || isNaN(candle.l) || isNaN(candle.c)) {
+            console.error('NaN values in candle:', candle);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// =============================================================================
+// MAIN FETCH FUNCTION
+// =============================================================================
+
+export interface FetchKlinesOptions {
+    symbol?: string;
+    interval?: string;
+    startTime?: number;
+    limit?: number;
+}
+
+export type FetchKlinesResult = {
+    success: true;
+    candles: Candle[];
+    startTime: number;
+} | {
+    success: false;
+    error: GameApiError;
+};
+
+/**
+ * Fetch klines from Binance with retry logic and validation
+ */
+export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<FetchKlinesResult> {
+    const {
+        symbol = 'BTCUSDT',
+        interval = '1h',
+        startTime,
+        limit = 500,
+    } = options;
+
+    // Determine start time
+    let effectiveStartTime: number;
+
+    if (startTime) {
+        effectiveStartTime = startTime;
+    } else {
+        // Random start time within last 2 years
+        const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        const minStartTime = now - TWO_YEARS_MS;
+        // Leave buffer for 500 hourly candles (~21 days)
+        const buffer = limit * 60 * 60 * 1000;
+        effectiveStartTime = Math.floor(minStartTime + Math.random() * (now - minStartTime - buffer));
+    }
+
+    // Check cache
+    const cacheKey = getCacheKey(symbol, interval, effectiveStartTime);
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+        return { success: true, candles: cached, startTime: effectiveStartTime };
+    }
+
+    // Build URL
+    const url = `${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&startTime=${effectiveStartTime}&limit=${limit}`;
+
+    // Retry loop
+    let lastError: GameApiError | null = null;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            // Wait before retry (except first attempt)
+            if (attempt > 0) {
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1]));
+            }
+
+            const response = await fetchWithTimeout(url, FETCH_TIMEOUT);
+
+            // Handle rate limiting
+            if (response.status === 429) {
+                lastError = {
+                    error: 'Binance API rate limit exceeded. Please wait a moment.',
+                    code: 'RATE_LIMIT',
+                    retryable: true,
+                };
+                continue;
+            }
+
+            // Handle other errors
+            if (!response.ok) {
+                lastError = {
+                    error: `Binance API returned status ${response.status}`,
+                    code: 'NETWORK_ERROR',
+                    retryable: response.status >= 500,
+                };
+                if (!lastError.retryable) break;
+                continue;
+            }
+
+            const rawData = await response.json();
+
+            // Validate structure
+            if (!validateKlines(rawData)) {
+                lastError = {
+                    error: 'Invalid data structure from Binance API',
+                    code: 'INVALID_DATA',
+                    retryable: false,
+                };
+                break;
+            }
+
+            // Parse candles
+            const candles = parseKlines(rawData);
+
+            // Validate candles
+            if (!validateCandles(candles)) {
+                lastError = {
+                    error: 'Candle data validation failed (duplicates or invalid order)',
+                    code: 'INVALID_DATA',
+                    retryable: true, // Might work with different start time
+                };
+                continue;
+            }
+
+            // Check minimum length
+            if (candles.length < limit - 10) { // Allow small margin
+                lastError = {
+                    error: `Insufficient data: got ${candles.length} candles, expected ${limit}`,
+                    code: 'NO_DATA',
+                    retryable: true,
+                };
+                continue;
+            }
+
+            // Success!
+            setCache(cacheKey, candles);
+            return { success: true, candles, startTime: effectiveStartTime };
+
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                lastError = {
+                    error: 'Request timed out. Please check your connection.',
+                    code: 'NETWORK_ERROR',
+                    retryable: true,
+                };
+            } else {
+                lastError = {
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    code: 'UNKNOWN',
+                    retryable: true,
+                };
+            }
+        }
+    }
+
+    return { success: false, error: lastError! };
+}
+
+/**
+ * Generate a new random start time (for retry with different seed)
+ */
+export function generateRandomStartTime(): number {
+    const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const minStartTime = now - TWO_YEARS_MS;
+    const buffer = 500 * 60 * 60 * 1000;
+    return Math.floor(minStartTime + Math.random() * (now - minStartTime - buffer));
+}
