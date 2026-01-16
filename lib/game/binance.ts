@@ -5,14 +5,14 @@
 import { Candle, GameApiError } from './types';
 
 const BINANCE_ENDPOINTS = [
-    { url: 'https://data-api.binance.vision', path: '/api/v3' },
-    { url: 'https://api-gcp.binance.com', path: '/api/v3' },
-    { url: 'https://api.binance.com', path: '/api/v3' },
-    { url: 'https://api1.binance.com', path: '/api/v3' },
-    { url: 'https://api2.binance.com', path: '/api/v3' },
-    { url: 'https://api3.binance.com', path: '/api/v3' },
+    'https://api.binance.com',
+    'https://api1.binance.com',
+    'https://api2.binance.com',
+    'https://api3.binance.com',
+    'https://api4.binance.com',
+    'https://data-api.binance.vision',
 ];
-const FETCH_TIMEOUT = 2500;
+const FETCH_TIMEOUT = 3000;
 const MAX_RETRIES = 5;
 const RETRY_DELAYS = [0, 500, 1000];
 
@@ -193,102 +193,123 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
     let endpointIndex = 0;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        const endpoint = BINANCE_ENDPOINTS[endpointIndex % BINANCE_ENDPOINTS.length];
-        const url = `${endpoint.url}${endpoint.path}/klines?symbol=${symbol}&interval=${interval}&startTime=${effectiveStartTime}&limit=${limit}`;
+        const baseUri = BINANCE_ENDPOINTS[endpointIndex % BINANCE_ENDPOINTS.length];
 
-        try {
-            console.log(`[Binance API] Attempt ${attempt + 1}: Fetching from ${endpoint.url}`);
+        // Try v3 first, then v1 if v3 fails with 404
+        const paths = ['/api/v3', '/api/v1'];
 
-            // Wait before retry (except first attempt)
-            if (attempt > 0) {
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1] || 1000));
-            }
+        for (const apiPath of paths) {
+            const url = `${baseUri}${apiPath}/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&startTime=${effectiveStartTime}&limit=${limit}`;
 
-            const response = await fetchWithTimeout(url, FETCH_TIMEOUT);
+            try {
+                console.log(`[Binance API] Attempt ${attempt + 1}: Fetching from ${baseUri}${apiPath}`);
 
-            if (!response.ok) {
-                let errorText = '';
-                try { errorText = await response.text(); } catch (e) { }
+                if (attempt > 0) {
+                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1] || 500));
+                }
 
-                console.warn(`[Binance API] ${response.status} Error at ${endpoint.url}: ${errorText.substring(0, 100)}`);
+                const response = await fetchWithTimeout(url, FETCH_TIMEOUT);
 
-                if (response.status === 451 || response.status === 404 || response.status >= 500) {
-                    endpointIndex++; // Rotate
+                if (response.status === 451) {
+                    console.warn(`[Binance API] 451 Blocked: ${baseUri}. Rotating endpoint...`);
+                    endpointIndex++;
                     lastError = {
-                        error: `Binance API ${response.status} at ${endpoint.url}: ${errorText}`,
+                        error: `Binance API 451 Blocked at ${baseUri}`,
                         code: 'NETWORK_ERROR',
                         retryable: true,
                     };
-                    continue;
+                    break; // Move to next baseUri
                 }
 
-                if (response.status === 429) {
-                    lastError = { error: 'Rate limit', code: 'RATE_LIMIT', retryable: true };
-                    continue;
+                if (response.status === 404) {
+                    console.warn(`[Binance API] 404 Not Found: ${baseUri}${apiPath}. Trying fallback path...`);
+                    lastError = {
+                        error: `Binance API 404 Not Found at ${baseUri}${apiPath}`,
+                        code: 'NETWORK_ERROR',
+                        retryable: true,
+                    };
+                    continue; // Try next apiPath for same baseUri
                 }
 
-                lastError = { error: `HTTP ${response.status}`, code: 'NETWORK_ERROR', retryable: false };
+                if (!response.ok) {
+                    let errorText = '';
+                    try { errorText = await response.text(); } catch (e) { }
+                    console.error(`[Binance API] Error ${response.status} at ${baseUri}: ${errorText.substring(0, 100)}`);
+
+                    if (response.status === 429) {
+                        lastError = { error: 'Rate limit', code: 'RATE_LIMIT', retryable: true };
+                    } else {
+                        lastError = { error: `HTTP ${response.status}`, code: 'NETWORK_ERROR', retryable: false };
+                    }
+                    endpointIndex++;
+                    break; // Move to next baseUri
+                }
+
+                const rawData = await response.json();
+                console.log(`[Binance API] Success! Data received from ${baseUri}`);
+
+                if (!validateKlines(rawData)) {
+                    console.error(`[Binance API] Invalid data structure from ${baseUri}`);
+                    lastError = {
+                        error: 'Invalid data structure from Binance API',
+                        code: 'INVALID_DATA',
+                        retryable: false,
+                    };
+                    endpointIndex++;
+                    break;
+                }
+
+                const candles = parseKlines(rawData);
+                if (!validateCandles(candles)) {
+                    console.error(`[Binance API] Candle data validation failed from ${baseUri}`);
+                    lastError = {
+                        error: 'Candle data validation failed (duplicates or invalid order)',
+                        code: 'INVALID_DATA',
+                        retryable: true,
+                    };
+                    endpointIndex++;
+                    break;
+                }
+
+                const minRequired = options.startTime ? 60 : limit - 10;
+                if (candles.length < minRequired) {
+                    console.warn(`[Binance API] Insufficient data from ${baseUri}: got ${candles.length} candles`);
+                    lastError = {
+                        error: `Insufficient data: got ${candles.length} candles`,
+                        code: 'NO_DATA',
+                        retryable: true,
+                    };
+                    endpointIndex++;
+                    break;
+                }
+
+                setCache(cacheKey, candles);
+                return { success: true, candles, startTime: effectiveStartTime };
+
+            } catch (error) {
+                console.error(`[Binance API] Exception on ${baseUri}${apiPath}:`, error);
+                if (error instanceof Error && error.name === 'AbortError') {
+                    lastError = {
+                        error: 'Request timed out. Please check your connection.',
+                        code: 'NETWORK_ERROR',
+                        retryable: true,
+                    };
+                } else {
+                    lastError = {
+                        error: error instanceof Error ? error.message : 'Unknown error',
+                        code: 'UNKNOWN',
+                        retryable: true,
+                    };
+                }
+                endpointIndex++;
                 break;
             }
-
-            const rawData = await response.json();
-            console.log(`[Binance API] Success! Received data from ${endpoint.url}`);
-            // ... rest of the validation logic remains same but I will include it to ensure consistency
-
-            // Validate structure
-            if (!validateKlines(rawData)) {
-                lastError = {
-                    error: 'Invalid data structure from Binance API',
-                    code: 'INVALID_DATA',
-                    retryable: false,
-                };
-                break;
-            }
-
-            // Parse candles
-            const candles = parseKlines(rawData);
-
-            // Validate candles
-            if (!validateCandles(candles)) {
-                lastError = {
-                    error: 'Candle data validation failed (duplicates or invalid order)',
-                    code: 'INVALID_DATA',
-                    retryable: true,
-                };
-                continue;
-            }
-
-            const minRequired = options.startTime ? 60 : limit - 10;
-            if (candles.length < minRequired) {
-                lastError = {
-                    error: `Insufficient data: got ${candles.length} candles`,
-                    code: 'NO_DATA',
-                    retryable: true,
-                };
-                continue;
-            }
-
-            // Success!
-            setCache(cacheKey, candles);
-            return { success: true, candles, startTime: effectiveStartTime };
-
-        } catch (error) {
-            console.error(`[Binance API] Exception on ${endpoint.url}:`, error);
-            if (error instanceof Error && error.name === 'AbortError') {
-                lastError = {
-                    error: 'Request timed out. Please check your connection.',
-                    code: 'NETWORK_ERROR',
-                    retryable: true,
-                };
-            } else {
-                lastError = {
-                    error: error instanceof Error ? error.message : 'Unknown error',
-                    code: 'UNKNOWN',
-                    retryable: true,
-                };
-            }
-            // Switch endpoint on network failure too
-            endpointIndex++;
+        }
+        // If we reach here, either all paths failed for the current baseUri, or a non-retryable error occurred.
+        // If lastError is not null and retryable, the outer loop will continue with the next attempt/endpoint.
+        // If lastError is not retryable, the outer loop will break.
+        if (lastError && !lastError.retryable) {
+            break;
         }
     }
 
