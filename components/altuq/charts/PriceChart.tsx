@@ -72,7 +72,7 @@ export function PriceChart() {
                         <Checkbox
                             id="ma"
                             checked={indicators.ma}
-                            onCheckedChange={(c) => setIndicators(prev => ({ ...prev, ma: !!c }))}
+                            onCheckedChange={(c: boolean | 'indeterminate') => setIndicators(prev => ({ ...prev, ma: !!c }))}
                             className="data-[state=checked]:bg-indigo-500 border-white/20"
                         />
                         <label htmlFor="ma" className="text-xs text-zinc-400 font-medium cursor-pointer">MA(20/50)</label>
@@ -81,7 +81,7 @@ export function PriceChart() {
                         <Checkbox
                             id="bb"
                             checked={indicators.bb}
-                            onCheckedChange={(c) => setIndicators(prev => ({ ...prev, bb: !!c }))}
+                            onCheckedChange={(c: boolean | 'indeterminate') => setIndicators(prev => ({ ...prev, bb: !!c }))}
                             className="data-[state=checked]:bg-purple-500 border-white/20"
                         />
                         <label htmlFor="bb" className="text-xs text-zinc-400 font-medium cursor-pointer">Bollinger</label>
