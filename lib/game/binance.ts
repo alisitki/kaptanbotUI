@@ -5,18 +5,16 @@
 import { Candle, GameApiError } from './types';
 
 const BINANCE_ENDPOINTS = [
-    { url: 'https://api.binance.me', path: '/api/v3' },
-    { url: 'https://api.binance.cc', path: '/api/v3' },
-    { url: 'https://api.binance.info', path: '/api/v3' },
     { url: 'https://data-api.binance.vision', path: '/api/v3' },
+    { url: 'https://api-gcp.binance.com', path: '/api/v3' },
     { url: 'https://api.binance.com', path: '/api/v3' },
     { url: 'https://api1.binance.com', path: '/api/v3' },
     { url: 'https://api2.binance.com', path: '/api/v3' },
     { url: 'https://api3.binance.com', path: '/api/v3' },
 ];
-const FETCH_TIMEOUT = 2000; // 2 seconds - very aggressive for fast failover
-const MAX_RETRIES = 7;      // Try up to 8 endpoints
-const RETRY_DELAYS = [0, 0, 100, 200];
+const FETCH_TIMEOUT = 2500;
+const MAX_RETRIES = 5;
+const RETRY_DELAYS = [0, 500, 1000];
 
 // =============================================================================
 // CACHE
