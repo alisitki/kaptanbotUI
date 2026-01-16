@@ -166,25 +166,35 @@ export default function PlayGamePage() {
                             </Link>
                             <div>
                                 <h1 className="text-xl font-bold text-white">Price Action Master</h1>
-                                <p className="text-sm text-zinc-500">Mevcut mum: {currentIndex} / {fullData.length}</p>
+                                <div className="flex items-center gap-2 text-sm text-zinc-500">
+                                    <span>Mevcut mum: {currentIndex} / {fullData.length}</span>
+                                    {fullData.length > 0 && (
+                                        <>
+                                            <span className="text-zinc-700 mx-1">•</span>
+                                            <span className="text-emerald-500 font-mono">
+                                                {new Date(fullData[0].time).toLocaleDateString("tr-TR")}
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                         </div>
                         <div className="flex items-center gap-6">
 
                             {/* Settings Dialog */}
-                            <Dialog>
+                            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                                 <DialogTrigger asChild>
                                     <Button
                                         variant="outline"
                                         size="sm"
                                         className="border-white/10 hover:bg-white/5 text-zinc-400"
                                     >
-                                        <Settings2 className="w-4 h-4 mr-2" /> Senaryo Ayarları
+                                        <Settings2 className="w-4 h-4 mr-2" /> Tarih & Zaman
                                     </Button>
                                 </DialogTrigger>
                                 <DialogContent className="bg-[#0A0A0A] border-white/10 text-white sm:max-w-[425px]">
                                     <DialogHeader>
-                                        <DialogTitle>Oyun Senaryosu Seç</DialogTitle>
+                                        <DialogTitle>Zaman Ayarı</DialogTitle>
                                         <DialogDescription className="text-zinc-500">
                                             Piyasa koşullarını rastgele belirleyebilir veya belirli bir tarihten başlatabilirsiniz.
                                         </DialogDescription>
@@ -197,7 +207,7 @@ export default function PlayGamePage() {
                                             onClick={() => loadGame()}
                                         >
                                             <RefreshCcw className="w-4 h-4 mr-2" />
-                                            Rastgele Senaryo Başlat
+                                            Rastgele Başlat
                                         </Button>
 
                                         <div className="relative">
