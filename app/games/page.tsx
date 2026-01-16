@@ -60,12 +60,14 @@ export default function GamesPage() {
                                                 <span>Zorluk: Orta</span>
                                             </div>
                                         </div>
-                                        <Link href="/games/play">
-                                            <Button className="w-fit mt-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
-                                                <Gamepad2 className="w-4 h-4 mr-2" />
-                                                Oyna
-                                            </Button>
-                                        </Link>
+                                        <div className="relative z-20">
+                                            <Link href="/games/play">
+                                                <Button className="w-fit mt-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+                                                    <Gamepad2 className="w-4 h-4 mr-2" />
+                                                    Oyna
+                                                </Button>
+                                            </Link>
+                                        </div>
                                     </div>
                                     <div className="relative w-full md:w-1/3 min-h-[200px] bg-gradient-to-br from-emerald-900/20 to-black/40 flex items-center justify-center border-l border-white/5">
                                         {/* Mock Game Visual */}
