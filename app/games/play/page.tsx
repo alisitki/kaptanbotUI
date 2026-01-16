@@ -127,6 +127,28 @@ export default function PlayGamePage() {
         );
     }
 
+    // Error State (No Data)
+    if (fullData.length === 0) {
+        return (
+            <div className="flex h-screen w-full bg-[#020202] items-center justify-center">
+                <div className="text-center space-y-4">
+                    <p className="text-rose-400 font-bold text-lg">Veri Yüklenemedi</p>
+                    <p className="text-zinc-500 max-w-md mx-auto">
+                        Binance ile bağlantı kurulamadı veya seçilen tarih için veri bulunamadı.
+                        Lütfen internet bağlantınızı kontrol edin veya farklı bir senaryo deneyin.
+                    </p>
+                    <Button
+                        variant="outline"
+                        onClick={() => loadGame()}
+                        className="bg-white/5 border-white/10 hover:bg-white/10 text-white"
+                    >
+                        <RefreshCcw className="w-4 h-4 mr-2" /> Tekrar Dene
+                    </Button>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="flex h-screen w-full bg-[#020202] dark font-sans antialiased text-white selection:bg-indigo-500/30 overflow-hidden">
             <Sidebar />
