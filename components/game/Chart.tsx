@@ -54,7 +54,10 @@ export function GameChart({ candles, currentIndex, position }: GameChartProps) {
     const entryPrice = position?.entryPrice;
 
     return (
-        <Card className="h-full border-white/5 bg-[#0A0A0A]/80 backdrop-blur-md flex flex-col overflow-hidden relative">
+        <Card
+            className="h-full border-white/5 bg-[#0A0A0A]/80 backdrop-blur-md flex flex-col overflow-hidden relative cursor-pointer hover:bg-[#0A0A0A]/90 transition-colors"
+            onClick={() => window.open('https://youtu.be/9xOTMuxi1Ac?si=th_GBWbBomTYV2Xr', '_blank')}
+        >
             {/* Price Display */}
             <div className="absolute top-4 left-4 z-10 bg-black/60 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/10">
                 <div className="text-xs text-zinc-500 uppercase mb-1">BTC/USDT</div>
