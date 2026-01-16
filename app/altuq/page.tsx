@@ -98,15 +98,15 @@ export default function AltuqOverviewPage() {
             </div>
 
             {/* 2. Main Grid: Chart & Actions */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto lg:h-[500px]">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 {/* Left: Price Chart (2/3 width) */}
-                <div className="lg:col-span-2 h-full">
+                <div className="lg:col-span-2">
                     <PriceChart />
                 </div>
 
                 {/* Right: Quick Actions Panel (1/3 width) */}
-                <div className="h-full">
+                <div>
                     <Card className="h-full border-white/5 bg-[#0A0A0A]/80 backdrop-blur-md flex flex-col">
                         <CardHeader className="pb-4 border-b border-white/5 bg-white/2">
                             <CardTitle className="text-lg font-medium text-white flex items-center gap-2">
