@@ -20,14 +20,25 @@ export interface Candle {
 export type PositionSide = 'LONG' | 'SHORT';
 
 /**
+ * Margin Mode
+ */
+export type MarginMode = 'ISOLATED' | 'CROSS';
+
+/**
  * Open position
  */
 export interface Position {
     side: PositionSide;
     entryPrice: number;
     entryTime: number;
-    size: number;  // Always 1 BTC in MVP
+    size: number;          // Size in BTC (Qty)
+    notional: number;      // Size in USDT (size * entryPrice)
+    leverage: number;      // Selected leverage
+    marginUsed: number;    // Collateral used for this position
     entryFees: number;
+    liqPrice: number;      // Liquidation price
+    mmr: number;           // Maintenance margin rate (0.005 = 0.5%)
+    mode: MarginMode;      // ISOLATED or CROSS
 }
 
 /**
@@ -40,9 +51,13 @@ export interface Trade {
     entryTime: number;
     exitTime: number;
     size: number;
-    pnl: number;       // Net PnL after fees
-    grossPnl: number;  // PnL before fees
-    fees: number;      // Total fees (entry + exit)
+    notional: number;
+    leverage: number;
+    marginMode: MarginMode;
+    pnl: number;           // Net PnL after all fees
+    grossPnl: number;      // PnL before fees
+    fees: number;          // Total fees (entry + exit)
+    isLiquidated: boolean; // Whether position was liquidated
 }
 
 /**
@@ -53,6 +68,7 @@ export interface GameConfig {
     slippageEnabled: boolean;
     takerFeeBps: number;   // Default: 4 (0.04%)
     slippageBps: number;   // Default: 2 (0.02%)
+    mmr: number;           // Default: 50 (0.50% = 0.005)
 }
 
 /**
@@ -65,10 +81,15 @@ export interface GameState {
 
     // Financials
     initialEquity: number;
-    cash: number;
+    cash: number;          // Free balance
     position: Position | null;
     trades: Trade[];
     totalFeesPaid: number;
+
+    // Futures Settings
+    leverage: number;
+    marginMode: MarginMode;
+    marginUsedUSDT: number; // Selected margin for Isolated mode
 
     // Config
     config: GameConfig;
@@ -81,7 +102,7 @@ export interface GameState {
 
     // Game status
     isEnded: boolean;
-    endReason: 'completed' | 'margin_call' | null;
+    endReason: 'completed' | 'margin_call' | 'liquidated' | null;
 }
 
 /**
@@ -97,6 +118,8 @@ export interface SessionSummary {
     maxDrawdown: number;
     winRate: number;
     totalTrades: number;
+    maxRoe: number;         // NEW: Maximum ROE% achieved
+    liquidated: boolean;    // NEW: Whether any trade was liquidated
     timestamp: number;      // When session was saved
 }
 
@@ -117,6 +140,8 @@ export interface SessionStats {
     avgWin: number;
     avgLoss: number;
     totalFees: number;
+    maxRoe: number;         // NEW: Maximum ROE% achieved
+    liquidations: number;   // NEW: Total 
 }
 
 /**
@@ -148,6 +173,7 @@ export const DEFAULT_CONFIG: GameConfig = {
     slippageEnabled: true,
     takerFeeBps: 4,    // 0.04%
     slippageBps: 2,    // 0.02%
+    mmr: 50,           // 0.50%
 };
 
 export const INITIAL_EQUITY = 10_000;

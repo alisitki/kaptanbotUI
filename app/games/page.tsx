@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,8 +14,6 @@ import {
     Target,
     Calendar,
     Shuffle,
-    TrendingUp,
-    TrendingDown,
     Clock
 } from "lucide-react";
 import {
@@ -27,20 +25,18 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog";
 import { Sidebar } from "@/components/altuq/layout/Sidebar";
-import Link from "next/link";
 import { getSessions } from "@/lib/game/storage";
 import { SessionSummary } from "@/lib/game/types";
 
 export default function GamesPage() {
     const router = useRouter();
-    const [sessions, setSessions] = useState<SessionSummary[]>([]);
+    // Load sessions using lazy initialization (SSR-safe)
+    const [sessions] = useState<SessionSummary[]>(() => {
+        if (typeof window === 'undefined') return [];
+        return getSessions();
+    });
     const [selectedDate, setSelectedDate] = useState("");
     const [dialogOpen, setDialogOpen] = useState(false);
-
-    // Load sessions from localStorage
-    useEffect(() => {
-        setSessions(getSessions());
-    }, []);
 
     const handleRandomStart = () => {
         router.push('/games/play');
@@ -77,7 +73,7 @@ export default function GamesPage() {
 
                         {/* Main Game Card */}
                         <Card className="border-white/5 bg-[#0A0A0A]/50 backdrop-blur-md overflow-hidden relative group">
-                            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
                             <div className="flex flex-col md:flex-row">
                                 <div className="p-8 flex flex-col justify-center gap-4 flex-1">
@@ -88,8 +84,8 @@ export default function GamesPage() {
                                     <div>
                                         <CardTitle className="text-2xl mb-2 text-white">Price Action Master</CardTitle>
                                         <CardDescription className="text-zinc-400 text-base">
-                                            Geçmiş grafik verileri üzerinde al/sat yaparak en yüksek PnL'e ulaşmaya çalış.
-                                            Gerçek piyasa koşullarında risksiz antrenman. Fees ve slippage simulasyonu dahil.
+                                            Geçmiş grafik verileri üzerinde al/sat yaparak en yüksek PnL&apos;e ulaşmaya çalış.
+                                            Gerçek piyasa koşullarında risksiz antrenman. Fees ve slippage simülasyonu dahil.
                                         </CardDescription>
                                     </div>
 
@@ -106,14 +102,13 @@ export default function GamesPage() {
 
                                     {/* Action Buttons */}
                                     <div className="flex items-center gap-3 mt-2">
-                                        <Link href="/games/play">
-                                            <Button
-                                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                                            >
-                                                <Shuffle className="w-4 h-4 mr-2" />
-                                                Rastgele Başla
-                                            </Button>
-                                        </Link>
+                                        <Button
+                                            onClick={handleRandomStart}
+                                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                                        >
+                                            <Shuffle className="w-4 h-4 mr-2" />
+                                            Rastgele Başla
+                                        </Button>
 
                                         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                                             <DialogTrigger asChild>
@@ -183,15 +178,22 @@ export default function GamesPage() {
                                             className="border-white/5 bg-[#0A0A0A]/50 backdrop-blur-md p-4"
                                         >
                                             <div className="flex items-start justify-between mb-3">
-                                                <Badge
-                                                    variant="outline"
-                                                    className={`text-[10px] ${session.mode === 'random'
-                                                        ? 'border-indigo-500/30 text-indigo-400'
-                                                        : 'border-emerald-500/30 text-emerald-400'
-                                                        }`}
-                                                >
-                                                    {session.mode === 'random' ? 'Rastgele' : 'Tarih'}
-                                                </Badge>
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <Badge
+                                                        variant="outline"
+                                                        className={`text-[10px] ${session.mode === 'random'
+                                                            ? 'border-indigo-500/30 text-indigo-400'
+                                                            : 'border-emerald-500/30 text-emerald-400'
+                                                            }`}
+                                                    >
+                                                        {session.mode === 'random' ? 'Rastgele' : 'Tarih'}
+                                                    </Badge>
+                                                    {session.liquidated && (
+                                                        <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4 bg-rose-500/10 text-rose-500 border-rose-500/20">
+                                                            LİKİTE
+                                                        </Badge>
+                                                    )}
+                                                </div>
                                                 <span className="text-[10px] text-zinc-600">
                                                     {new Date(session.timestamp).toLocaleDateString('tr-TR')}
                                                 </span>
@@ -207,16 +209,10 @@ export default function GamesPage() {
                                                 </div>
 
                                                 <div className="flex items-center justify-between">
-                                                    <span className="text-xs text-zinc-500">Getiri</span>
-                                                    <span className={`text-xs font-mono ${session.returnPct >= 0 ? 'text-emerald-500' : 'text-rose-500'
-                                                        }`}>
-                                                        {session.returnPct >= 0 ? '+' : ''}{session.returnPct.toFixed(2)}%
+                                                    <span className="text-xs text-zinc-500">En Yüksek ROE</span>
+                                                    <span className="text-xs font-mono text-emerald-500">
+                                                        +{session.maxRoe?.toFixed(1) || '0.0'}%
                                                     </span>
-                                                </div>
-
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-xs text-zinc-500">İşlemler</span>
-                                                    <span className="text-xs text-white">{session.totalTrades}</span>
                                                 </div>
 
                                                 <div className="flex items-center justify-between">
@@ -228,8 +224,9 @@ export default function GamesPage() {
                                                 </div>
                                             </div>
 
-                                            <div className="mt-3 pt-3 border-t border-white/5 text-[10px] text-zinc-600">
-                                                {new Date(session.startDate).toLocaleDateString('tr-TR')} → {new Date(session.endDate).toLocaleDateString('tr-TR')}
+                                            <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-zinc-600">
+                                                <span>{new Date(session.startDate).toLocaleDateString('tr-TR')} → {new Date(session.endDate).toLocaleDateString('tr-TR')}</span>
+                                                <span>{session.totalTrades} İşlem</span>
                                             </div>
                                         </Card>
                                     ))}
@@ -259,7 +256,6 @@ export default function GamesPage() {
                                 </CardContent>
                             </Card>
                         </div>
-
                     </div>
                 </main>
             </div>

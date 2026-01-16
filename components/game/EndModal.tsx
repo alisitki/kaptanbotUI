@@ -24,7 +24,7 @@ import { SessionStats } from "@/lib/game/types";
 interface EndModalProps {
     isOpen: boolean;
     stats: SessionStats;
-    endReason: 'completed' | 'margin_call' | null;
+    endReason: 'completed' | 'margin_call' | 'liquidated' | null;
     onPlayAgain: () => void;
     onChooseDate: () => void;
 }
@@ -38,16 +38,19 @@ export function EndModal({
 }: EndModalProps) {
     const isProfit = stats.totalPnl >= 0;
     const isMarginCall = endReason === 'margin_call';
+    const isLiquidated = endReason === 'liquidated';
 
     return (
         <Dialog open={isOpen}>
             <DialogContent className="bg-[#0A0A0A] border-white/10 text-white sm:max-w-[500px]">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-xl">
-                        {isMarginCall ? (
+                        {isMarginCall || isLiquidated ? (
                             <>
                                 <AlertTriangle className="w-6 h-6 text-rose-500" />
-                                <span className="text-rose-400">Margin Call!</span>
+                                <span className="text-rose-400">
+                                    {isLiquidated ? 'Likitasyon!' : 'Margin Call!'}
+                                </span>
                             </>
                         ) : (
                             <>
@@ -57,9 +60,11 @@ export function EndModal({
                         )}
                     </DialogTitle>
                     <DialogDescription className="text-zinc-500">
-                        {isMarginCall
-                            ? "Bakiyeniz sıfırın altına düştü. Oyun sonlandırıldı."
-                            : "500 mum tamamlandı. İşte performansınız:"}
+                        {isLiquidated
+                            ? "Teminatınız yetersiz kaldı ve pozisyonunuz likite edildi."
+                            : isMarginCall
+                                ? "Bakiyeniz sıfırın altına düştü. Oyun sonlandırıldı."
+                                : "500 mum tamamlandı. İşte performansınız:"}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -89,15 +94,15 @@ export function EndModal({
                     />
                     <StatItem
                         icon={<TrendingUp className="w-4 h-4 text-emerald-500" />}
-                        label="Kazanan İşlemler"
-                        value={stats.winningTrades.toString()}
+                        label="En İyi ROE"
+                        value={`${stats.maxRoe.toFixed(1)}%`}
                         valueColor="text-emerald-400"
                     />
                     <StatItem
                         icon={<TrendingDown className="w-4 h-4 text-rose-500" />}
-                        label="Kaybeden İşlemler"
-                        value={stats.losingTrades.toString()}
-                        valueColor="text-rose-400"
+                        label="Likitasyon"
+                        value={stats.liquidations.toString()}
+                        valueColor={stats.liquidations > 0 ? 'text-rose-500 font-bold' : 'text-zinc-500'}
                     />
                     <StatItem
                         icon={<TrendingUp className="w-4 h-4 text-emerald-500" />}

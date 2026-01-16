@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/altuq/layout/Sidebar";
 import { ArrowLeft, RefreshCcw, AlertTriangle } from "lucide-react";
@@ -22,7 +22,6 @@ import {
     SessionSummary,
     DEFAULT_CONFIG,
     INITIAL_EQUITY,
-    TOTAL_CANDLES,
 } from "@/lib/game/types";
 import {
     createInitialState,
@@ -39,8 +38,9 @@ import { saveSession, generateSessionId } from "@/lib/game/storage";
 // MAIN COMPONENT
 // =============================================================================
 
-export default function PlayGamePage() {
+function PlayGameContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
 
     // Game State
     const [gameState, setGameState] = useState<GameState | null>(null);
@@ -116,7 +116,50 @@ export default function PlayGamePage() {
 
     // Initial load
     useEffect(() => {
-        loadGame();
+        const startTime = searchParams.get('startTime');
+        const mode = searchParams.get('mode') as 'random' | 'date';
+
+        loadGame(
+            startTime ? parseInt(startTime) : undefined,
+            mode || 'random'
+        );
+    }, [searchParams, loadGame]);
+
+    // =============================================================================
+    // GAME END HANDLER (defined first since executeAction depends on it)
+    // =============================================================================
+
+    const handleGameEnd = useCallback((state: GameState) => {
+        const stats = computeStats(state.trades, INITIAL_EQUITY, state.totalFeesPaid, state.cash);
+
+        // Save session to localStorage
+        const firstCandle = state.candles[0];
+        const lastCandle = state.candles[state.currentIndex];
+
+        const summary: SessionSummary = {
+            id: generateSessionId(),
+            startDate: new Date(firstCandle.t).toISOString(),
+            endDate: new Date(lastCandle.t).toISOString(),
+            mode: state.mode,
+            pnl: stats.totalPnl,
+            returnPct: stats.returnPct,
+            maxDrawdown: stats.maxDrawdown,
+            winRate: stats.winRate,
+            totalTrades: stats.totalTrades,
+            maxRoe: stats.maxRoe,
+            liquidated: stats.liquidations > 0,
+            timestamp: Date.now(),
+        };
+
+        saveSession(summary);
+        setShowEndModal(true);
+
+        if (state.endReason === 'liquidated') {
+            toast.error("LİKİTE OLDUN!", {
+                description: "Tüm teminatın sıfırlandı. Dikkatli ol!",
+                duration: 5000,
+            });
+        }
     }, []);
 
     // =============================================================================
@@ -145,7 +188,7 @@ export default function PlayGamePage() {
             processingLock.current = false;
             setIsProcessing(false);
         }
-    }, [gameState, config]);
+    }, [gameState, config, handleGameEnd]);
 
     const handleLong = useCallback(() => {
         if (!gameState) return;
@@ -173,32 +216,8 @@ export default function PlayGamePage() {
         setConfig(prev => ({ ...prev, ...changes }));
     }, []);
 
-    // =============================================================================
-    // GAME END
-    // =============================================================================
-
-    const handleGameEnd = useCallback((state: GameState) => {
-        const stats = computeStats(state.trades, INITIAL_EQUITY, state.totalFeesPaid, state.cash);
-
-        // Save session to localStorage
-        const firstCandle = state.candles[0];
-        const lastCandle = state.candles[state.currentIndex];
-
-        const summary: SessionSummary = {
-            id: generateSessionId(),
-            startDate: new Date(firstCandle.t).toISOString(),
-            endDate: new Date(lastCandle.t).toISOString(),
-            mode: state.mode,
-            pnl: stats.totalPnl,
-            returnPct: stats.returnPct,
-            maxDrawdown: stats.maxDrawdown,
-            winRate: stats.winRate,
-            totalTrades: stats.totalTrades,
-            timestamp: Date.now(),
-        };
-
-        saveSession(summary);
-        setShowEndModal(true);
+    const handleFuturesChange = useCallback((settings: Partial<Pick<GameState, 'leverage' | 'marginMode' | 'marginUsedUSDT'>>) => {
+        setGameState(prev => prev ? ({ ...prev, ...settings }) : null);
     }, []);
 
     // =============================================================================
@@ -229,8 +248,6 @@ export default function PlayGamePage() {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleNext, handleLong, handleShort, handleClose, gameState?.position]);
-
-    // =============================================================================
     // COMPUTED VALUES
     // =============================================================================
 
@@ -243,7 +260,7 @@ export default function PlayGamePage() {
         : null;
 
     // =============================================================================
-    // LOADING STATE
+    // RENDER (updated props)
     // =============================================================================
 
     if (isLoading) {
@@ -257,10 +274,6 @@ export default function PlayGamePage() {
             </div>
         );
     }
-
-    // =============================================================================
-    // ERROR STATE
-    // =============================================================================
 
     if (loadError || !gameState) {
         return (
@@ -281,10 +294,6 @@ export default function PlayGamePage() {
             </div>
         );
     }
-
-    // =============================================================================
-    // MAIN RENDER
-    // =============================================================================
 
     return (
         <div className="flex h-screen w-full bg-[#020202] dark font-sans antialiased text-white selection:bg-indigo-500/30 overflow-hidden">
@@ -324,12 +333,12 @@ export default function PlayGamePage() {
                         {/* Trade Panel (1 column) */}
                         <div className="col-span-1 h-full overflow-y-auto">
                             <TradePanel
+                                gameState={gameState}
                                 equity={equity}
                                 cash={gameState.cash}
                                 position={gameState.position}
                                 unrealizedPnl={unrealizedPnl}
                                 trades={gameState.trades}
-                                totalFeesPaid={gameState.totalFeesPaid}
                                 config={config}
                                 isProcessing={isProcessing}
                                 isEnded={gameState.isEnded}
@@ -338,6 +347,7 @@ export default function PlayGamePage() {
                                 onClose={handleClose}
                                 onNext={handleNext}
                                 onConfigChange={handleConfigChange}
+                                onFuturesChange={handleFuturesChange}
                             />
                         </div>
                     </div>
@@ -355,5 +365,20 @@ export default function PlayGamePage() {
                 />
             )}
         </div>
+    );
+}
+
+export default function PlayGamePage() {
+    return (
+        <Suspense fallback={
+            <div className="flex h-screen w-full bg-[#020202] items-center justify-center">
+                <div className="text-center space-y-4">
+                    <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                    <p className="text-zinc-400 animate-pulse">Başlatılıyor...</p>
+                </div>
+            </div>
+        }>
+            <PlayGameContent />
+        </Suspense>
     );
 }

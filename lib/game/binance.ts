@@ -230,9 +230,12 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
             }
 
             // Check minimum length
-            if (candles.length < limit - 10) { // Allow small margin
+            // If startTime is provided (date mode), we allow shorter sequences (min 60)
+            // If random mode, we strictly want close to limit (500)
+            const minRequired = options.startTime ? 60 : limit - 10;
+            if (candles.length < minRequired) {
                 lastError = {
-                    error: `Insufficient data: got ${candles.length} candles, expected ${limit}`,
+                    error: `Insufficient data: got ${candles.length} candles, expected ${options.startTime ? 'at least 60' : limit}`,
                     code: 'NO_DATA',
                     retryable: true,
                 };

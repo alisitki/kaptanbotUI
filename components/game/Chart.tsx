@@ -128,6 +128,23 @@ export function GameChart({ candles, currentIndex, position }: GameChartProps) {
                         />
                     )}
 
+                    {/* Liquidation Price Line */}
+                    {position && (
+                        <ReferenceLine
+                            y={position.liqPrice}
+                            stroke="#f43f5e"
+                            strokeDasharray="2 2"
+                            strokeWidth={2}
+                            label={{
+                                value: `Liq: $${position.liqPrice.toFixed(0)}`,
+                                position: 'right',
+                                fill: '#f43f5e',
+                                fontSize: 10,
+                                fontWeight: 'bold'
+                            }}
+                        />
+                    )}
+
                     {/* Current Price Line */}
                     <ReferenceLine
                         y={currentPrice}
