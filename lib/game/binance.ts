@@ -4,10 +4,19 @@
 
 import { Candle, GameApiError } from './types';
 
-const BINANCE_API = 'https://api.binance.com/api/v3';
+const BINANCE_ENDPOINTS = [
+    'https://api.binance.com',
+    'https://api1.binance.com',
+    'https://api2.binance.com',
+    'https://api3.binance.com',
+    'https://api.binance.me',
+    'https://api.binance.cc',
+    'https://data-api.binance.vision',
+];
+const API_PATH = '/api/v3';
 const FETCH_TIMEOUT = 8000; // 8 seconds
-const MAX_RETRIES = 2;
-const RETRY_DELAYS = [1000, 2000]; // Exponential backoff
+const MAX_RETRIES = 3; // Increased to cover endpoint switching
+const RETRY_DELAYS = [500, 1000, 2000];
 
 // =============================================================================
 // CACHE
@@ -49,8 +58,20 @@ async function fetchWithTimeout(url: string, timeout: number): Promise<Response>
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+    };
+
+    // Use API key if provided in env to increase rate limits/rank
+    if (process.env.BINANCE_API_KEY) {
+        headers['X-MBX-APIKEY'] = process.env.BINANCE_API_KEY;
+    }
+
     try {
-        const response = await fetch(url, { signal: controller.signal });
+        const response = await fetch(url, {
+            signal: controller.signal,
+            headers,
+        });
         return response;
     } finally {
         clearTimeout(timeoutId);
@@ -168,20 +189,34 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
         return { success: true, candles: cached, startTime: effectiveStartTime };
     }
 
-    // Build URL
-    const url = `${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&startTime=${effectiveStartTime}&limit=${limit}`;
-
     // Retry loop
     let lastError: GameApiError | null = null;
+    let endpointIndex = 0;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
+            // Pick endpoint (rotating on failure)
+            const baseUri = BINANCE_ENDPOINTS[endpointIndex % BINANCE_ENDPOINTS.length];
+            const url = `${baseUri}${API_PATH}/klines?symbol=${symbol}&interval=${interval}&startTime=${effectiveStartTime}&limit=${limit}`;
+
             // Wait before retry (except first attempt)
             if (attempt > 0) {
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1]));
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1] || 1000));
             }
 
             const response = await fetchWithTimeout(url, FETCH_TIMEOUT);
+
+            // Handle 451 (Unavailable For Legal Reasons - region blocked)
+            if (response.status === 451) {
+                console.warn(`Endpoint ${baseUri} blocked (451). Trying next...`);
+                endpointIndex++; // Switch to next endpoint
+                lastError = {
+                    error: `Binance API blocked this region (451) at ${baseUri}. Switching endpoint...`,
+                    code: 'NETWORK_ERROR',
+                    retryable: true,
+                };
+                continue;
+            }
 
             // Handle rate limiting
             if (response.status === 429) {

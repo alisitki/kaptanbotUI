@@ -391,6 +391,18 @@ export function computeStats(
         if (drawdown > maxDrawdown) maxDrawdown = drawdown;
     }
 
+    // Calculate max win streak
+    let currentStreak = 0;
+    let maxStreak = 0;
+    for (const trade of trades) {
+        if (trade.pnl > 0) {
+            currentStreak++;
+            if (currentStreak > maxStreak) maxStreak = currentStreak;
+        } else {
+            currentStreak = 0;
+        }
+    }
+
     return {
         totalPnl,
         returnPct,
@@ -407,6 +419,7 @@ export function computeStats(
         totalFees: totalFeesPaid,
         maxRoe,
         liquidations,
+        maxStreak,
     };
 }
 

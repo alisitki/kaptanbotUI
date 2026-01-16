@@ -1,15 +1,16 @@
-"use client";
-
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Calendar, Clock, Shuffle, CalendarDays } from "lucide-react";
+import { Calendar, Clock, Shuffle, CalendarDays, Settings2 } from "lucide-react";
 import { TOTAL_CANDLES } from "@/lib/game/types";
+import { RankBadge } from "./RankBadge";
 
 interface SessionHeaderProps {
     startTime: number;
     currentTime: number;
     currentIndex: number;
     mode: 'random' | 'date';
+    streak: number;
+    onSettingsOpen?: () => void;
 }
 
 export function SessionHeader({
@@ -17,6 +18,8 @@ export function SessionHeader({
     currentTime,
     currentIndex,
     mode,
+    streak,
+    onSettingsOpen,
 }: SessionHeaderProps) {
     const startDate = new Date(startTime);
     const currentDate = new Date(currentTime);
@@ -49,6 +52,11 @@ export function SessionHeader({
                     )}
                 </Badge>
 
+                {/* Rank Badge */}
+                <RankBadge streak={streak} />
+
+                <div className="h-4 w-px bg-white/10" />
+
                 {/* Start Date */}
                 <div className="flex items-center gap-2 text-sm">
                     <Calendar className="w-4 h-4 text-emerald-500" />
@@ -76,9 +84,19 @@ export function SessionHeader({
                 <div className="w-32">
                     <Progress
                         value={progressPercent}
-                        className="h-2 bg-zinc-800"
+                        className="h-2 bg-zinc-800 text-indigo-500"
                     />
                 </div>
+
+                <div className="h-6 w-px bg-white/10 mx-2" />
+
+                <button
+                    onClick={onSettingsOpen}
+                    className="p-2 rounded-full hover:bg-white/5 text-zinc-500 hover:text-white transition-colors"
+                    title="Oyun Ayarları"
+                >
+                    <Settings2 className="w-4 h-4" />
+                </button>
             </div>
         </div>
     );

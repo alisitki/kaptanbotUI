@@ -24,6 +24,7 @@ import {
     GameState,
 } from "@/lib/game/types";
 import { calculateRoe } from "@/lib/game/engine";
+import { motion } from "framer-motion";
 
 interface TradePanelProps {
     gameState: GameState;
@@ -41,6 +42,7 @@ interface TradePanelProps {
     onNext: () => void;
     onConfigChange: (config: Partial<GameConfig>) => void;
     onFuturesChange: (settings: Partial<Pick<GameState, 'leverage' | 'marginMode' | 'marginUsedUSDT'>>) => void;
+    onSettingsOpen?: () => void;
 }
 
 export function TradePanel({
@@ -59,6 +61,7 @@ export function TradePanel({
     onNext,
     onConfigChange,
     onFuturesChange,
+    onSettingsOpen,
 }: TradePanelProps) {
     // Calculate stats from trades
     const liquidations = trades.filter(t => t.isLiquidated).length;
@@ -253,31 +256,37 @@ export function TradePanel({
                 <TooltipProvider>
                     {isFlat ? (
                         <div className="grid grid-cols-2 gap-3">
-                            <Button
-                                onClick={onLong}
-                                disabled={isProcessing || isEnded || cash < 50}
-                                className="bg-emerald-600 hover:bg-emerald-500 h-12 text-lg font-bold disabled:opacity-50 transition-all active:scale-95"
-                            >
-                                <TrendingUp className="mr-2 h-5 w-5" /> LONG
-                            </Button>
+                            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }}>
+                                <Button
+                                    onClick={onLong}
+                                    disabled={isProcessing || isEnded || cash < 50}
+                                    className="w-full bg-emerald-600 hover:bg-emerald-500 h-12 text-lg font-bold disabled:opacity-50 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] border border-emerald-500/50"
+                                >
+                                    <TrendingUp className="mr-2 h-5 w-5" /> LONG
+                                </Button>
+                            </motion.div>
 
-                            <Button
-                                onClick={onShort}
-                                disabled={isProcessing || isEnded || cash < 50}
-                                className="bg-rose-600 hover:bg-rose-500 h-12 text-lg font-bold disabled:opacity-50 transition-all active:scale-95"
-                            >
-                                <TrendingDown className="mr-2 h-5 w-5" /> SHORT
-                            </Button>
+                            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                                <Button
+                                    onClick={onShort}
+                                    disabled={isProcessing || isEnded || cash < 50}
+                                    className="w-full bg-rose-600 hover:bg-rose-500 h-12 text-lg font-bold disabled:opacity-50 transition-all shadow-[0_0_20px_rgba(225,29,72,0.3)] hover:shadow-[0_0_30px_rgba(225,29,72,0.5)] border border-rose-500/50"
+                                >
+                                    <TrendingDown className="mr-2 h-5 w-5" /> SHORT
+                                </Button>
+                            </motion.div>
                         </div>
                     ) : (
-                        <Button
-                            onClick={onClose}
-                            disabled={isProcessing || isEnded}
-                            variant="secondary"
-                            className="w-full h-12 text-lg font-bold bg-zinc-700 hover:bg-zinc-600 text-white disabled:opacity-50 transition-all"
-                        >
-                            <X className="mr-2 h-5 w-5" /> POZİSYONU KAPAT
-                        </Button>
+                        <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.95 }}>
+                            <Button
+                                onClick={onClose}
+                                disabled={isProcessing || isEnded}
+                                variant="secondary"
+                                className="w-full h-12 text-lg font-bold bg-zinc-700 hover:bg-zinc-600 text-white disabled:opacity-50 transition-all shadow-lg border border-white/10"
+                            >
+                                <X className="mr-2 h-5 w-5" /> POZİSYONU KAPAT
+                            </Button>
+                        </motion.div>
                     )}
 
                     <Button
@@ -315,6 +324,16 @@ export function TradePanel({
                         />
                     </div>
                 </div>
+
+                <Button
+                    variant="link"
+                    size="sm"
+                    className="w-full mt-2 text-[10px] text-indigo-400 hover:text-indigo-300 gap-1 p-0 h-auto"
+                    onClick={onSettingsOpen}
+                >
+                    <Settings2 className="w-3 h-3" />
+                    Gelişmiş Görsel/Ses Ayarları
+                </Button>
             </Card>
 
             {/* Trade History */}

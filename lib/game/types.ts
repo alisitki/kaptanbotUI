@@ -142,6 +142,7 @@ export interface SessionStats {
     totalFees: number;
     maxRoe: number;         // NEW: Maximum ROE% achieved
     liquidations: number;   // NEW: Total 
+    maxStreak: number;      // NEW: Best win streak
 }
 
 /**

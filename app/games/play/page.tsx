@@ -33,6 +33,11 @@ import {
     computeStats,
 } from "@/lib/game/engine";
 import { saveSession, generateSessionId } from "@/lib/game/storage";
+import { EffectsLayer } from "@/components/game/EffectsLayer";
+import { useGameSound } from "@/lib/game/sfx";
+import { triggerEffect } from "@/lib/game/effects";
+import { GameBackground } from "@/components/game/GameBackground";
+import { SettingsModal, GamePreferences } from "@/components/game/SettingsModal";
 
 // =============================================================================
 // MAIN COMPONENT
@@ -48,6 +53,15 @@ function PlayGameContent() {
     const [loadError, setLoadError] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [showEndModal, setShowEndModal] = useState(false);
+    const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+    // Preferences
+    const [preferences, setPreferences] = useState<GamePreferences>({
+        soundEnabled: true,
+        effectsEnabled: true,
+        visualIntensity: 80,
+        backgroundEnabled: true,
+    });
 
     // Config (can be changed mid-game)
     const [config, setConfig] = useState<GameConfig>(DEFAULT_CONFIG);
@@ -155,6 +169,7 @@ function PlayGameContent() {
         setShowEndModal(true);
 
         if (state.endReason === 'liquidated') {
+            triggerEffect('LIQUIDATED');
             toast.error("LİKİTE OLDUN!", {
                 description: "Tüm teminatın sıfırlandı. Dikkatli ol!",
                 duration: 5000,
@@ -192,18 +207,31 @@ function PlayGameContent() {
 
     const handleLong = useCallback(() => {
         if (!gameState) return;
+        triggerEffect('OPEN_LONG');
         executeAction(() => openPosition(gameState, 'LONG'));
         toast.success("LONG Açıldı");
     }, [gameState, executeAction]);
 
     const handleShort = useCallback(() => {
         if (!gameState) return;
+        triggerEffect('OPEN_SHORT');
         executeAction(() => openPosition(gameState, 'SHORT'));
         toast.success("SHORT Açıldı");
     }, [gameState, executeAction]);
 
     const handleClose = useCallback(() => {
         if (!gameState) return;
+
+        // Calculate PnL for effect before closing
+        const currentPrice = gameState.candles[gameState.currentIndex].c;
+        const pnl = gameState.position ? computeUnrealized(gameState.position, currentPrice) : 0;
+
+        if (pnl > 0) {
+            triggerEffect('CLOSE_WIN', { pnl });
+        } else {
+            triggerEffect('CLOSE_LOSS', { pnl });
+        }
+
         executeAction(() => closePosition(gameState));
     }, [gameState, executeAction]);
 
@@ -248,6 +276,8 @@ function PlayGameContent() {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleNext, handleLong, handleShort, handleClose, gameState?.position]);
+
+    // =============================================================================
     // COMPUTED VALUES
     // =============================================================================
 
@@ -258,6 +288,22 @@ function PlayGameContent() {
     const stats = gameState
         ? computeStats(gameState.trades, INITIAL_EQUITY, gameState.totalFeesPaid, gameState.cash)
         : null;
+
+    // Calculate streak from trades
+    const streak = gameState?.trades
+        ? (() => {
+            let s = 0;
+            // Iterate backwards
+            for (let i = gameState.trades.length - 1; i >= 0; i--) {
+                if (gameState.trades[i].pnl > 0) s++;
+                else break;
+            }
+            return s;
+        })()
+        : 0;
+
+    // Initialize/Enable Sound
+    useGameSound(preferences.soundEnabled);
 
     // =============================================================================
     // RENDER (updated props)
@@ -296,7 +342,12 @@ function PlayGameContent() {
     }
 
     return (
-        <div className="flex h-screen w-full bg-[#020202] dark font-sans antialiased text-white selection:bg-indigo-500/30 overflow-hidden">
+        <div className="flex h-screen w-full bg-[#020202] dark font-sans antialiased text-white selection:bg-indigo-500/30 overflow-hidden relative">
+            <GameBackground enabled={preferences.backgroundEnabled} />
+            <EffectsLayer
+                enabled={preferences.effectsEnabled}
+                intensity={preferences.visualIntensity}
+            />
             <Sidebar />
 
             <div className="flex flex-1 flex-col pl-64 h-full transition-all duration-300">
@@ -306,6 +357,8 @@ function PlayGameContent() {
                     currentTime={currentCandle?.t ?? gameState.startTime}
                     currentIndex={gameState.currentIndex}
                     mode={gameState.mode}
+                    streak={streak}
+                    onSettingsOpen={() => setShowSettingsModal(true)}
                 />
 
                 {/* Main Content */}
@@ -348,6 +401,7 @@ function PlayGameContent() {
                                 onNext={handleNext}
                                 onConfigChange={handleConfigChange}
                                 onFuturesChange={handleFuturesChange}
+                                onSettingsOpen={() => setShowSettingsModal(true)}
                             />
                         </div>
                     </div>
@@ -364,6 +418,14 @@ function PlayGameContent() {
                     onChooseDate={() => router.push('/games')}
                 />
             )}
+
+            {/* Settings Modal */}
+            <SettingsModal
+                isOpen={showSettingsModal}
+                onClose={() => setShowSettingsModal(false)}
+                preferences={preferences}
+                onPreferencesChange={(newPrefs) => setPreferences(prev => ({ ...prev, ...newPrefs }))}
+            />
         </div>
     );
 }
