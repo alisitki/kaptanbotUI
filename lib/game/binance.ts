@@ -5,19 +5,21 @@
 import { Candle, GameApiError } from './types';
 
 const BINANCE_ENDPOINTS = [
+    'https://api.binance.me',
+    'https://api.binance.cc',
+    'https://api.binance.info',
     'https://api.binance.com',
     'https://api1.binance.com',
     'https://api2.binance.com',
     'https://api3.binance.com',
-    'https://api.binance.me',
-    'https://api.binance.cc',
-    'https://api.binance.info',
+    'https://api-g1.binance.com',
+    'https://api-g2.binance.com',
     'https://data-api.binance.vision',
 ];
 const API_PATH = '/api/v3';
-const FETCH_TIMEOUT = 8000; // 8 seconds
-const MAX_RETRIES = 10; // High enough to try every endpoint if 451 occurs
-const RETRY_DELAYS = [200, 500, 1000];
+const FETCH_TIMEOUT = 10000; // 10 seconds
+const MAX_RETRIES = 12;
+const RETRY_DELAYS = [200, 500, 1000, 2000];
 
 // =============================================================================
 // CACHE
@@ -61,6 +63,7 @@ async function fetchWithTimeout(url: string, timeout: number): Promise<Response>
 
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     };
 
     // Use API key if provided in env to increase rate limits/rank
