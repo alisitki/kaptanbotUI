@@ -144,16 +144,19 @@ export function PriceChart() {
                         />
 
                         {/* Reference - Last Price */}
-                        <ReferenceLine y={data[data.length - 1].price} stroke="#c084fc" strokeDasharray="3 3">
-                            <text x="10" y="5" fill="white" fontSize="10" fontWeight="bold">LIVE</text>
-                        </ReferenceLine>
+                        <ReferenceLine
+                            y={data[data.length - 1].price}
+                            stroke="#c084fc"
+                            strokeDasharray="3 3"
+                            label={{ position: 'right', value: 'LIVE', fill: '#c084fc', fontSize: 10, fontWeight: 'bold' }}
+                        />
 
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
 
             {/* Floating Info */}
-            <div className="absolute top-20 right-6 bg-black/40 backdrop-blur px-3 py-2 rounded border border-white/5 space-y-1">
+            <div className="absolute top-20 left-6 bg-black/40 backdrop-blur px-3 py-2 rounded border border-white/5 space-y-1">
                 <div className="text-2xl font-bold font-mono text-white">98,245.20 <span className="text-sm text-zinc-500 font-sans font-normal">USDT</span></div>
                 <div className="flex gap-2 text-xs">
                     <span className="text-emerald-400">24h High: 99,102.00</span>
