@@ -5,16 +5,18 @@
 import { Candle, GameApiError } from './types';
 
 const BINANCE_ENDPOINTS = [
+    { url: 'https://api.binance.me', path: '/api/v3' },
+    { url: 'https://api.binance.cc', path: '/api/v3' },
+    { url: 'https://api.binance.info', path: '/api/v3' },
     { url: 'https://data-api.binance.vision', path: '/api/v3' },
     { url: 'https://api.binance.com', path: '/api/v3' },
     { url: 'https://api1.binance.com', path: '/api/v3' },
     { url: 'https://api2.binance.com', path: '/api/v3' },
     { url: 'https://api3.binance.com', path: '/api/v3' },
-    { url: 'https://api-gcp.binance.com', path: '/api/v3' },
 ];
-const FETCH_TIMEOUT = 2500; // 2.5 seconds - very tight for fast rotation
-const MAX_RETRIES = 3;      // Total 4 attempts
-const RETRY_DELAYS = [0, 200, 500]; // Almost immediate retry
+const FETCH_TIMEOUT = 2000; // 2 seconds - very aggressive for fast failover
+const MAX_RETRIES = 7;      // Try up to 8 endpoints
+const RETRY_DELAYS = [0, 0, 100, 200];
 
 // =============================================================================
 // CACHE
@@ -206,42 +208,29 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
 
             const response = await fetchWithTimeout(url, FETCH_TIMEOUT);
 
-            // Handle 451 (Region Blocked) or 404 (Path/Domain Issues)
-            if (response.status === 451 || response.status === 404) {
-                console.warn(`[Binance API] ${response.status} Error at ${endpoint.url}. Rotating...`);
-                endpointIndex++; // Try next endpoint
-                lastError = {
-                    error: `Binance API returned ${response.status} at ${endpoint.url}. Switching endpoint...`,
-                    code: 'NETWORK_ERROR',
-                    retryable: true,
-                };
-                continue;
-            }
-
-            // Handle rate limiting
-            if (response.status === 429) {
-                console.warn(`[Binance API] 429 Rate Limit: ${endpoint.url}`);
-                lastError = {
-                    error: 'Binance API rate limit exceeded. Please wait a moment.',
-                    code: 'RATE_LIMIT',
-                    retryable: true,
-                };
-                continue;
-            }
-
-            // Handle other errors
             if (!response.ok) {
-                console.error(`[Binance API] Error ${response.status}: ${endpoint.url}`);
-                lastError = {
-                    error: `Binance API returned status ${response.status}`,
-                    code: 'NETWORK_ERROR',
-                    retryable: response.status >= 500,
-                };
-                if (!lastError.retryable) {
-                    endpointIndex++; // Even if not retryable, try next endpoint
+                let errorText = '';
+                try { errorText = await response.text(); } catch (e) { }
+
+                console.warn(`[Binance API] ${response.status} Error at ${endpoint.url}: ${errorText.substring(0, 100)}`);
+
+                if (response.status === 451 || response.status === 404 || response.status >= 500) {
+                    endpointIndex++; // Rotate
+                    lastError = {
+                        error: `Binance API ${response.status} at ${endpoint.url}: ${errorText}`,
+                        code: 'NETWORK_ERROR',
+                        retryable: true,
+                    };
                     continue;
                 }
-                continue;
+
+                if (response.status === 429) {
+                    lastError = { error: 'Rate limit', code: 'RATE_LIMIT', retryable: true };
+                    continue;
+                }
+
+                lastError = { error: `HTTP ${response.status}`, code: 'NETWORK_ERROR', retryable: false };
+                break;
             }
 
             const rawData = await response.json();
