@@ -5,18 +5,17 @@
 import { Candle, GameApiError } from './types';
 
 const BINANCE_ENDPOINTS = [
-    'https://api.binance.me',
-    'https://api.binance.cc',
-    'https://api.binance.info',
-    'https://api.binance.com',
-    'https://api1.binance.com',
-    'https://api2.binance.com',
-    'https://api3.binance.com',
-    'https://api-g1.binance.com',
-    'https://api-g2.binance.com',
-    'https://data-api.binance.vision',
+    { url: 'https://api.binance.com', path: '/api/v3' },
+    { url: 'https://api1.binance.com', path: '/api/v3' },
+    { url: 'https://api2.binance.com', path: '/api/v3' },
+    { url: 'https://api3.binance.com', path: '/api/v3' },
+    { url: 'https://api.binance.me', path: '/api/v3' },
+    { url: 'https://api.binance.cc', path: '/api/v3' },
+    { url: 'https://api.binance.info', path: '/api/v3' },
+    { url: 'https://api-g1.binance.com', path: '/api/v3' },
+    { url: 'https://api-g2.binance.com', path: '/api/v3' },
+    { url: 'https://data-api.binance.vision', path: '/api/v3' },
 ];
-const API_PATH = '/api/v3';
 const FETCH_TIMEOUT = 10000; // 10 seconds
 const MAX_RETRIES = 12;
 const RETRY_DELAYS = [200, 500, 1000, 2000];
@@ -198,11 +197,11 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
     let endpointIndex = 0;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        const baseUri = BINANCE_ENDPOINTS[endpointIndex % BINANCE_ENDPOINTS.length];
-        const url = `${baseUri}${API_PATH}/klines?symbol=${symbol}&interval=${interval}&startTime=${effectiveStartTime}&limit=${limit}`;
+        const endpoint = BINANCE_ENDPOINTS[endpointIndex % BINANCE_ENDPOINTS.length];
+        const url = `${endpoint.url}${endpoint.path}/klines?symbol=${symbol}&interval=${interval}&startTime=${effectiveStartTime}&limit=${limit}`;
 
         try {
-            console.log(`[Binance API] Attempt ${attempt + 1}: Fetching from ${baseUri}`);
+            console.log(`[Binance API] Attempt ${attempt + 1}: Fetching from ${endpoint.url}`);
 
             // Wait before retry (except first attempt)
             if (attempt > 0) {
@@ -211,12 +210,12 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
 
             const response = await fetchWithTimeout(url, FETCH_TIMEOUT);
 
-            // Handle 451 (Unavailable For Legal Reasons - region blocked)
-            if (response.status === 451) {
-                console.warn(`[Binance API] 451 Blocked: ${baseUri}. Rotating...`);
-                endpointIndex++; // Switch to next endpoint
+            // Handle 451 (Region Blocked) or 404 (Path/Domain Issues)
+            if (response.status === 451 || response.status === 404) {
+                console.warn(`[Binance API] ${response.status} Error at ${endpoint.url}. Rotating...`);
+                endpointIndex++; // Try next endpoint
                 lastError = {
-                    error: `Binance API blocked this region (451) at ${baseUri}. Switching endpoint...`,
+                    error: `Binance API returned ${response.status} at ${endpoint.url}. Switching endpoint...`,
                     code: 'NETWORK_ERROR',
                     retryable: true,
                 };
@@ -225,7 +224,7 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
 
             // Handle rate limiting
             if (response.status === 429) {
-                console.warn(`[Binance API] 429 Rate Limit: ${baseUri}`);
+                console.warn(`[Binance API] 429 Rate Limit: ${endpoint.url}`);
                 lastError = {
                     error: 'Binance API rate limit exceeded. Please wait a moment.',
                     code: 'RATE_LIMIT',
@@ -236,18 +235,21 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
 
             // Handle other errors
             if (!response.ok) {
-                console.error(`[Binance API] Error ${response.status}: ${baseUri}`);
+                console.error(`[Binance API] Error ${response.status}: ${endpoint.url}`);
                 lastError = {
                     error: `Binance API returned status ${response.status}`,
                     code: 'NETWORK_ERROR',
                     retryable: response.status >= 500,
                 };
-                if (!lastError.retryable) break;
+                if (!lastError.retryable) {
+                    endpointIndex++; // Even if not retryable, try next endpoint
+                    continue;
+                }
                 continue;
             }
 
             const rawData = await response.json();
-            console.log(`[Binance API] Success! Received data from ${baseUri}`);
+            console.log(`[Binance API] Success! Received data from ${endpoint.url}`);
             // ... rest of the validation logic remains same but I will include it to ensure consistency
 
             // Validate structure
@@ -288,7 +290,7 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
             return { success: true, candles, startTime: effectiveStartTime };
 
         } catch (error) {
-            console.error(`[Binance API] Exception on ${baseUri}:`, error);
+            console.error(`[Binance API] Exception on ${endpoint.url}:`, error);
             if (error instanceof Error && error.name === 'AbortError') {
                 lastError = {
                     error: 'Request timed out. Please check your connection.',
