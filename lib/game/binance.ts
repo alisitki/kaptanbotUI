@@ -198,10 +198,11 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
     let endpointIndex = 0;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        const baseUri = BINANCE_ENDPOINTS[endpointIndex % BINANCE_ENDPOINTS.length];
+        const url = `${baseUri}${API_PATH}/klines?symbol=${symbol}&interval=${interval}&startTime=${effectiveStartTime}&limit=${limit}`;
+
         try {
-            // Pick endpoint (rotating on failure)
-            const baseUri = BINANCE_ENDPOINTS[endpointIndex % BINANCE_ENDPOINTS.length];
-            const url = `${baseUri}${API_PATH}/klines?symbol=${symbol}&interval=${interval}&startTime=${effectiveStartTime}&limit=${limit}`;
+            console.log(`[Binance API] Attempt ${attempt + 1}: Fetching from ${baseUri}`);
 
             // Wait before retry (except first attempt)
             if (attempt > 0) {
@@ -212,7 +213,7 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
 
             // Handle 451 (Unavailable For Legal Reasons - region blocked)
             if (response.status === 451) {
-                console.warn(`Endpoint ${baseUri} blocked (451). Trying next...`);
+                console.warn(`[Binance API] 451 Blocked: ${baseUri}. Rotating...`);
                 endpointIndex++; // Switch to next endpoint
                 lastError = {
                     error: `Binance API blocked this region (451) at ${baseUri}. Switching endpoint...`,
@@ -224,6 +225,7 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
 
             // Handle rate limiting
             if (response.status === 429) {
+                console.warn(`[Binance API] 429 Rate Limit: ${baseUri}`);
                 lastError = {
                     error: 'Binance API rate limit exceeded. Please wait a moment.',
                     code: 'RATE_LIMIT',
@@ -234,6 +236,7 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
 
             // Handle other errors
             if (!response.ok) {
+                console.error(`[Binance API] Error ${response.status}: ${baseUri}`);
                 lastError = {
                     error: `Binance API returned status ${response.status}`,
                     code: 'NETWORK_ERROR',
@@ -244,6 +247,8 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
             }
 
             const rawData = await response.json();
+            console.log(`[Binance API] Success! Received data from ${baseUri}`);
+            // ... rest of the validation logic remains same but I will include it to ensure consistency
 
             // Validate structure
             if (!validateKlines(rawData)) {
@@ -263,18 +268,15 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
                 lastError = {
                     error: 'Candle data validation failed (duplicates or invalid order)',
                     code: 'INVALID_DATA',
-                    retryable: true, // Might work with different start time
+                    retryable: true,
                 };
                 continue;
             }
 
-            // Check minimum length
-            // If startTime is provided (date mode), we allow shorter sequences (min 60)
-            // If random mode, we strictly want close to limit (500)
             const minRequired = options.startTime ? 60 : limit - 10;
             if (candles.length < minRequired) {
                 lastError = {
-                    error: `Insufficient data: got ${candles.length} candles, expected ${options.startTime ? 'at least 60' : limit}`,
+                    error: `Insufficient data: got ${candles.length} candles`,
                     code: 'NO_DATA',
                     retryable: true,
                 };
@@ -286,6 +288,7 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
             return { success: true, candles, startTime: effectiveStartTime };
 
         } catch (error) {
+            console.error(`[Binance API] Exception on ${baseUri}:`, error);
             if (error instanceof Error && error.name === 'AbortError') {
                 lastError = {
                     error: 'Request timed out. Please check your connection.',
@@ -299,6 +302,8 @@ export async function fetchKlines(options: FetchKlinesOptions = {}): Promise<Fet
                     retryable: true,
                 };
             }
+            // Switch endpoint on network failure too
+            endpointIndex++;
         }
     }
 
