@@ -29,10 +29,12 @@ export default function PlayGamePage() {
     const [balance, setBalance] = useState(10000); // Virtual 10k USDT
     const [position, setPosition] = useState<{ type: 'LONG' | 'SHORT', entry: number, size: number } | null>(null);
     const [history, setHistory] = useState<any[]>([]);
+    const [dialogOpen, setDialogOpen] = useState(false);
 
     // Fetch Game Data
     const loadGame = async (startTime?: number) => {
         try {
+            setDialogOpen(false);
             setIsLoading(true);
             setBalance(10000); // Reset balance
             setPosition(null);
@@ -215,7 +217,7 @@ export default function PlayGamePage() {
                                 <div className="text-right px-4 py-1 rounded bg-white/5 border border-white/10">
                                     <div className="text-xs text-zinc-500 uppercase font-bold">Açık PnL</div>
                                     <div className={`text-xl font-mono font-bold ${(position.type === 'LONG' ? (currentPrice - position.entry) : (position.entry - currentPrice)) >= 0
-                                            ? 'text-emerald-400' : 'text-rose-400'
+                                        ? 'text-emerald-400' : 'text-rose-400'
                                         }`}>
                                         {((position.type === 'LONG' ? (currentPrice - position.entry) : (position.entry - currentPrice))).toFixed(2)}$
                                     </div>
