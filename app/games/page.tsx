@@ -27,6 +27,7 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog";
 import { Sidebar } from "@/components/altuq/layout/Sidebar";
+import Link from "next/link";
 import { getSessions } from "@/lib/game/storage";
 import { SessionSummary } from "@/lib/game/types";
 
@@ -105,13 +106,14 @@ export default function GamesPage() {
 
                                     {/* Action Buttons */}
                                     <div className="flex items-center gap-3 mt-2">
-                                        <Button
-                                            onClick={handleRandomStart}
-                                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                                        >
-                                            <Shuffle className="w-4 h-4 mr-2" />
-                                            Rastgele Başla
-                                        </Button>
+                                        <Link href="/games/play">
+                                            <Button
+                                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
+                                            >
+                                                <Shuffle className="w-4 h-4 mr-2" />
+                                                Rastgele Başla
+                                            </Button>
+                                        </Link>
 
                                         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                                             <DialogTrigger asChild>
@@ -184,8 +186,8 @@ export default function GamesPage() {
                                                 <Badge
                                                     variant="outline"
                                                     className={`text-[10px] ${session.mode === 'random'
-                                                            ? 'border-indigo-500/30 text-indigo-400'
-                                                            : 'border-emerald-500/30 text-emerald-400'
+                                                        ? 'border-indigo-500/30 text-indigo-400'
+                                                        : 'border-emerald-500/30 text-emerald-400'
                                                         }`}
                                                 >
                                                     {session.mode === 'random' ? 'Rastgele' : 'Tarih'}
