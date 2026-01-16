@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sidebar } from "@/components/altuq/layout/Sidebar";
-import { ArrowLeft, Play, TrendingUp, TrendingDown, RefreshCcw } from "lucide-react";
+import { ArrowLeft, Play, TrendingUp, TrendingDown, RefreshCcw, Settings2 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import {
     AreaChart,
     Area,
-    XAxis,
     YAxis,
     CartesianGrid,
     Tooltip,
@@ -19,33 +21,54 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 
-// Mock Data Generator for Game
-const generateGameData = (count: number) => {
-    const data = [];
-    let price = 50000;
-    for (let i = 0; i < count; i++) {
-        const change = (Math.random() - 0.5) * 500;
-        price += change;
-        data.push({
-            time: i,
-            price: price,
-            // Simulated simplified indicators
-            ma20: price + (Math.random() - 0.5) * 100,
-        });
-    }
-    return data;
-};
-
 export default function PlayGamePage() {
     // Game State
-    const fullData = useMemo(() => generateGameData(200), []);
+    const [fullData, setFullData] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [currentIndex, setCurrentIndex] = useState(50); // Start with 50 candles
     const [balance, setBalance] = useState(10000); // Virtual 10k USDT
     const [position, setPosition] = useState<{ type: 'LONG' | 'SHORT', entry: number, size: number } | null>(null);
     const [history, setHistory] = useState<any[]>([]);
 
+    // Fetch Game Data
+    const loadGame = async (startTime?: number) => {
+        try {
+            setIsLoading(true);
+            setBalance(10000); // Reset balance
+            setPosition(null);
+            setHistory([]);
+            setCurrentIndex(50);
+
+            const url = startTime
+                ? `/api/game/start?startTime=${startTime}`
+                : '/api/game/start';
+
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("Veri hatası");
+            const data = await res.json();
+
+            if (data.length === 0) {
+                toast.error("Bu tarih için veri bulunamadı.");
+                return;
+            }
+
+            setFullData(data);
+            toast.success("Oyun Başladı", { description: startTime ? "Seçilen tarih yüklendi" : "Rastgele senaryo yüklendi" });
+        } catch (error) {
+            console.error(error);
+            toast.error("Veri yüklenemedi.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Initial Load
+    useEffect(() => {
+        loadGame();
+    }, []);
+
     const currentData = fullData.slice(0, currentIndex);
-    const currentPrice = currentData[currentData.length - 1].price;
+    const currentPrice = currentData.length > 0 ? currentData[currentData.length - 1].price : 0;
 
     // Actions
     const handleNextCandle = () => {
@@ -123,14 +146,67 @@ export default function PlayGamePage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-6">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-white/10 hover:bg-white/5 text-zinc-400"
-                                onClick={() => window.location.reload()}
-                            >
-                                <RefreshCcw className="w-4 h-4 mr-2" /> Yeni Senaryo
-                            </Button>
+
+                            {/* Settings Dialog */}
+                            <Dialog>
+                                <DialogTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="border-white/10 hover:bg-white/5 text-zinc-400"
+                                    >
+                                        <Settings2 className="w-4 h-4 mr-2" /> Senaryo Ayarları
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent className="bg-[#0A0A0A] border-white/10 text-white sm:max-w-[425px]">
+                                    <DialogHeader>
+                                        <DialogTitle>Oyun Senaryosu Seç</DialogTitle>
+                                        <DialogDescription className="text-zinc-500">
+                                            Piyasa koşullarını rastgele belirleyebilir veya belirli bir tarihten başlatabilirsiniz.
+                                        </DialogDescription>
+                                    </DialogHeader>
+
+                                    <div className="grid gap-6 py-4">
+                                        <Button
+                                            variant="secondary"
+                                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white h-12"
+                                            onClick={() => loadGame()}
+                                        >
+                                            <RefreshCcw className="w-4 h-4 mr-2" />
+                                            Rastgele Senaryo Başlat
+                                        </Button>
+
+                                        <div className="relative">
+                                            <div className="absolute inset-0 flex items-center">
+                                                <span className="w-full border-t border-white/10" />
+                                            </div>
+                                            <div className="relative flex justify-center text-xs uppercase">
+                                                <span className="bg-[#0A0A0A] px-2 text-zinc-500">Veya Tarih Seç</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <Label className="text-xs text-zinc-400">Başlangıç Tarihi</Label>
+                                                <Input
+                                                    type="date"
+                                                    className="bg-zinc-900 border-white/10 text-white"
+                                                    onChange={(e) => {
+                                                        if (e.target.value) {
+                                                            const ts = new Date(e.target.value).getTime();
+                                                            loadGame(ts);
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                            <p className="text-[10px] text-zinc-600">
+                                                Seçilen tarihten itibaren 500 saatlik veri yüklenecektir.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
+
                             <div className="text-right">
                                 <div className="text-xs text-zinc-500 uppercase font-bold">Bakiye</div>
                                 <div className="text-2xl font-mono font-bold text-emerald-400">${balance.toFixed(2)}</div>
@@ -139,7 +215,7 @@ export default function PlayGamePage() {
                                 <div className="text-right px-4 py-1 rounded bg-white/5 border border-white/10">
                                     <div className="text-xs text-zinc-500 uppercase font-bold">Açık PnL</div>
                                     <div className={`text-xl font-mono font-bold ${(position.type === 'LONG' ? (currentPrice - position.entry) : (position.entry - currentPrice)) >= 0
-                                        ? 'text-emerald-400' : 'text-rose-400'
+                                            ? 'text-emerald-400' : 'text-rose-400'
                                         }`}>
                                         {((position.type === 'LONG' ? (currentPrice - position.entry) : (position.entry - currentPrice))).toFixed(2)}$
                                     </div>
