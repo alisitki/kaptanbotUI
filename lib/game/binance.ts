@@ -5,20 +5,17 @@
 import { Candle, GameApiError } from './types';
 
 const BINANCE_ENDPOINTS = [
-    { url: 'https://api.binance.com', path: '/api/v3' },
+    { url: 'https://api.binance.me', path: '/api/v3' },
+    { url: 'https://api.binance.cc', path: '/api/v3' },
     { url: 'https://api1.binance.com', path: '/api/v3' },
     { url: 'https://api2.binance.com', path: '/api/v3' },
     { url: 'https://api3.binance.com', path: '/api/v3' },
-    { url: 'https://api.binance.me', path: '/api/v3' },
-    { url: 'https://api.binance.cc', path: '/api/v3' },
-    { url: 'https://api.binance.info', path: '/api/v3' },
-    { url: 'https://api-g1.binance.com', path: '/api/v3' },
-    { url: 'https://api-g2.binance.com', path: '/api/v3' },
+    { url: 'https://api.binance.com', path: '/api/v3' },
     { url: 'https://data-api.binance.vision', path: '/api/v3' },
 ];
-const FETCH_TIMEOUT = 10000; // 10 seconds
-const MAX_RETRIES = 12;
-const RETRY_DELAYS = [200, 500, 1000, 2000];
+const FETCH_TIMEOUT = 3500; // 3.5 seconds to fit within Vercel's 10s hobby limit
+const MAX_RETRIES = 4;      // Fewer retries, but faster rotation
+const RETRY_DELAYS = [0, 500, 1000]; // No delay on first retry
 
 // =============================================================================
 // CACHE
