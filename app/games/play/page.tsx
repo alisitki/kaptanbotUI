@@ -89,7 +89,18 @@ export default function PlayGamePage() {
         handleNextCandle();
     };
 
-    // Auto-progress if position is open (optional, simpler to manual step for now)
+    // Loading State
+    if (isLoading) {
+        return (
+            <div className="flex h-screen w-full bg-[#020202] items-center justify-center">
+                <div className="text-center space-y-4">
+                    <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                    <p className="text-zinc-400 animate-pulse">Piyasa verileri yükleniyor...</p>
+                    <p className="text-xs text-zinc-600">Geçmiş BTC hareketleri taranıyor</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex h-screen w-full bg-[#020202] dark font-sans antialiased text-white selection:bg-indigo-500/30 overflow-hidden">
@@ -112,6 +123,14 @@ export default function PlayGamePage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-6">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-white/10 hover:bg-white/5 text-zinc-400"
+                                onClick={() => window.location.reload()}
+                            >
+                                <RefreshCcw className="w-4 h-4 mr-2" /> Yeni Senaryo
+                            </Button>
                             <div className="text-right">
                                 <div className="text-xs text-zinc-500 uppercase font-bold">Bakiye</div>
                                 <div className="text-2xl font-mono font-bold text-emerald-400">${balance.toFixed(2)}</div>
@@ -120,7 +139,7 @@ export default function PlayGamePage() {
                                 <div className="text-right px-4 py-1 rounded bg-white/5 border border-white/10">
                                     <div className="text-xs text-zinc-500 uppercase font-bold">Açık PnL</div>
                                     <div className={`text-xl font-mono font-bold ${(position.type === 'LONG' ? (currentPrice - position.entry) : (position.entry - currentPrice)) >= 0
-                                            ? 'text-emerald-400' : 'text-rose-400'
+                                        ? 'text-emerald-400' : 'text-rose-400'
                                         }`}>
                                         {((position.type === 'LONG' ? (currentPrice - position.entry) : (position.entry - currentPrice))).toFixed(2)}$
                                     </div>
