@@ -164,7 +164,7 @@ export default function SettingsPage() {
                                 <span className={mode === 'PAPER' ? "text-emerald-500 font-bold" : "text-zinc-500"}>PAPER</span>
                                 <Switch
                                     checked={mode === 'LIVE'}
-                                    onCheckedChange={(c) => setMode(c ? 'LIVE' : 'PAPER')}
+                                    onCheckedChange={(c: boolean) => setMode(c ? 'LIVE' : 'PAPER')}
                                     className="data-[state=checked]:bg-rose-500"
                                 />
                                 <span className={mode === 'LIVE' ? "text-rose-500 font-bold" : "text-zinc-500"}>LIVE</span>
