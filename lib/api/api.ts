@@ -19,8 +19,21 @@ const getHeaders = () => {
     return headers;
 };
 
+const getUrl = (path: string) => {
+    const baseUrl = getBaseUrl();
+    const token = getToken();
+    const method = getAuthMethod();
+
+    let url = `${baseUrl}${path}`;
+    if (token && method === 'QUERY') {
+        const separator = url.includes('?') ? '&' : '?';
+        url = `${url}${separator}token=${encodeURIComponent(token)}`;
+    }
+    return url;
+};
+
 export async function apiGet<T>(path: string): Promise<T> {
-    const url = `${getBaseUrl()}${path}`;
+    const url = getUrl(path);
     try {
         return await http(url, {
             method: 'GET',
@@ -36,7 +49,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function apiPost<T>(path: string, body: any): Promise<T> {
-    const url = `${getBaseUrl()}${path}`;
+    const url = getUrl(path);
     return await http(url, {
         method: 'POST',
         headers: getHeaders(),
