@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Sidebar } from "@/components/altuq/layout/Sidebar";
+import { Sidebar } from "@/components/tradingbotv1/layout/Sidebar";
 import { ArrowLeft, RefreshCcw, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";

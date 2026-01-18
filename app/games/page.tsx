@@ -24,7 +24,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog";
-import { Sidebar } from "@/components/altuq/layout/Sidebar";
+import { Sidebar } from "@/components/tradingbotv1/layout/Sidebar";
 import { getSessions } from "@/lib/game/storage";
 import { SessionSummary } from "@/lib/game/types";
 
