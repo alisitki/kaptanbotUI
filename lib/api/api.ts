@@ -1,14 +1,20 @@
 
 import { http, ApiError } from './client/http';
-import { getBaseUrl, getToken } from './runtime';
+import { getBaseUrl, getToken, getAuthMethod } from './runtime';
 
 const getHeaders = () => {
     const token = getToken();
+    const method = getAuthMethod();
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
     };
+
     if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+        if (method === 'BEARER') {
+            headers['Authorization'] = `Bearer ${token}`;
+        } else if (method === 'API_KEY') {
+            headers['x-api-key'] = token;
+        }
     }
     return headers;
 };

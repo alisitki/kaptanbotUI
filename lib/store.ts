@@ -1,8 +1,9 @@
 
 import { create } from 'zustand';
-import { getBaseUrl, getToken } from './api/runtime';
+import { getBaseUrl, getToken, getAuthMethod } from './api/runtime';
 import { apiGet } from './api/api';
 import { AppState, Watch, BotEvent } from './api/client/types';
+import { fetchSSE } from './api/client/sse';
 
 interface BotStore {
     state: AppState | null;
@@ -23,7 +24,7 @@ interface BotStore {
 }
 
 export const useBotStore = create<BotStore>((set, get) => {
-    let eventSource: EventSource | null = null;
+    let abortController: AbortController | null = null;
     let pollIntervalState: NodeJS.Timeout | null = null;
     let pollIntervalWatches: NodeJS.Timeout | null = null;
     let connectionTimeout: NodeJS.Timeout | null = null;
@@ -65,7 +66,7 @@ export const useBotStore = create<BotStore>((set, get) => {
         lastEventId: null,
         accessDenied: false,
 
-        start: () => {
+        start: async () => {
             const token = getToken();
             if (!token) return;
 
@@ -76,75 +77,72 @@ export const useBotStore = create<BotStore>((set, get) => {
                 }
             }, 10000);
 
-            const url = `${getBaseUrl()}/v1/stream?token=${encodeURIComponent(token)}`;
-            eventSource = new EventSource(url);
+            const method = getAuthMethod();
+            const url = `${getBaseUrl()}/v1/stream`;
 
-            eventSource.onopen = () => {
-                console.log("SSE Connected");
-                set({ sseConnected: true });
-                if (connectionTimeout) clearTimeout(connectionTimeout);
-                stopPolling(); // Stop polling if we connect
+            // Build headers/params based on method
+            const fetchOptions: RequestInit = {
+                headers: {
+                    'Accept': 'text/event-stream',
+                }
             };
 
-            eventSource.onerror = (err) => {
-                console.error("SSE Error:", err);
-                set({ sseConnected: false });
+            const headers = fetchOptions.headers as Record<string, string>;
+            if (method === 'BEARER') {
+                headers['Authorization'] = `Bearer ${token}`;
+            } else if (method === 'API_KEY') {
+                headers['x-api-key'] = token;
+            }
 
-                // Simple logic: if error persists, it might be auth, but EventSource onerror doesn't give status code easily.
-                // However, usually browser logs it.
-                // We will rely on api calls (polling) to detect 401/403 if SSE fails silently or closes.
-                eventSource?.close();
-                // If SSE fails, start polling
-                startPolling();
-            };
+            const streamUrl = method === 'QUERY'
+                ? `${url}?token=${encodeURIComponent(token)}`
+                : url;
 
-            eventSource.addEventListener('state', (e: MessageEvent) => {
-                try {
-                    const data = JSON.parse(e.data);
-                    set({ state: data });
-                } catch (err) {
-                    console.error("Error parsing state event", err);
+            abortController = new AbortController();
+            fetchOptions.signal = abortController.signal;
+
+            console.log("Starting SSE via Fetch...");
+
+            fetchSSE(
+                streamUrl,
+                fetchOptions,
+                (ev) => {
+                    // Handle events
+                    if (!get().sseConnected) {
+                        set({ sseConnected: true });
+                        if (connectionTimeout) clearTimeout(connectionTimeout);
+                        stopPolling();
+                    }
+
+                    try {
+                        const data = JSON.parse(ev.data);
+                        if (ev.event === 'state') set({ state: data });
+                        else if (ev.event === 'watches') set({ watches: data });
+                        else if (ev.event === 'events') {
+                            let newEvents: BotEvent[] = Array.isArray(data) ? data : [data];
+                            set(state => {
+                                const existingIds = new Set(state.events.map(ev => ev.id));
+                                const uniqueNewEvents = newEvents.filter(ev => !existingIds.has(ev.id));
+                                const merged = [...uniqueNewEvents, ...state.events].slice(0, 200);
+                                return { events: merged };
+                            });
+                        }
+                    } catch (err) {
+                        console.error(`Error parsing ${ev.event} event`, err);
+                    }
+                },
+                (err) => {
+                    console.error("SSE Error:", err);
+                    set({ sseConnected: false });
+                    startPolling();
                 }
-            });
-
-            eventSource.addEventListener('watches', (e: MessageEvent) => {
-                try {
-                    const data = JSON.parse(e.data);
-                    set({ watches: data });
-                } catch (err) {
-                    console.error("Error parsing watches event", err);
-                }
-            });
-
-            eventSource.addEventListener('events', (e: MessageEvent) => {
-                try {
-                    const data = JSON.parse(e.data);
-                    // data can be single event or array? Prompt says "merge". Assume list or single.
-                    // But usually stream sends one by one or list. Let's assume list of events or single event object.
-                    // If it's a "snapshot" style, it might be a list.
-                    // If it's "incremental", it might be a single event.
-                    // Prompt says: "event: events -> merge (id unique), truncate 200"
-                    // Let's assume it sends an array of recent events or a single new event.
-                    // To be safe, let's handle both.
-                    let newEvents: BotEvent[] = Array.isArray(data) ? data : [data];
-
-                    set(state => {
-                        const existingIds = new Set(state.events.map(ev => ev.id));
-                        const uniqueNewEvents = newEvents.filter(ev => !existingIds.has(ev.id));
-
-                        const merged = [...uniqueNewEvents, ...state.events].slice(0, 200);
-                        return { events: merged };
-                    });
-                } catch (err) {
-                    console.error("Error parsing events event", err);
-                }
-            });
+            );
         },
 
         stop: () => {
-            if (eventSource) {
-                eventSource.close();
-                eventSource = null;
+            if (abortController) {
+                abortController.abort();
+                abortController = null;
             }
             if (connectionTimeout) clearTimeout(connectionTimeout);
             stopPolling();
