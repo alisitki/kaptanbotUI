@@ -89,13 +89,13 @@ export default function OverviewPage() {
                 />
                 <MetricCard
                     title="Active Watches"
-                    value={watches.length.toString()}
+                    value={watches?.length?.toString() || "0"}
                     neutral
                     subtext="Running Strategies"
                 />
                 <MetricCard
                     title="Notifications"
-                    value={state?.notifications.toString() || "0"}
+                    value={state?.notifications?.toString() || "0"}
                     neutral
                     subtext="System Alerts"
                 />

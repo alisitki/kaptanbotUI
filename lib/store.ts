@@ -88,15 +88,15 @@ export const useBotStore = create<BotStore>((set, get) => {
             };
 
             const headers = fetchOptions.headers as Record<string, string>;
-            if (method === 'BEARER') {
+            if (method === 'BEARER' && url.includes('/v1/stream')) {
+                // Force Query for stream as per backend requirement
+            } else if (method === 'BEARER') {
                 headers['Authorization'] = `Bearer ${token}`;
             } else if (method === 'API_KEY') {
                 headers['x-api-key'] = token;
             }
 
-            const streamUrl = method === 'QUERY'
-                ? `${url}?token=${encodeURIComponent(token)}`
-                : url;
+            const streamUrl = `${url}?token=${encodeURIComponent(token)}`;
 
             abortController = new AbortController();
             fetchOptions.signal = abortController.signal;
