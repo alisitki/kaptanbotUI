@@ -3,12 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest, { params }: { params: { path: string[] } }) {
-    return handleRequest(req, params.path, 'GET');
+export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+    const { path } = await params;
+    return handleRequest(req, path, 'GET');
 }
 
-export async function POST(req: NextRequest, { params }: { params: { path: string[] } }) {
-    return handleRequest(req, params.path, 'POST');
+export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+    const { path } = await params;
+    return handleRequest(req, path, 'POST');
 }
 
 async function handleRequest(req: NextRequest, pathArr: string[], method: string) {
