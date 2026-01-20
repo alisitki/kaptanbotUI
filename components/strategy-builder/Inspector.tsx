@@ -103,6 +103,60 @@ export function Inspector() {
                     </div>
                 )}
 
+                {/* PRICE_CROSS_LEVEL CONFIG */}
+                {type === 'CONDITION' && subType === 'PRICE_CROSS_LEVEL' && (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Direction</Label>
+                            <Select value={params.direction || 'DOWN'} onValueChange={(v) => handleParamChange('direction', v)}>
+                                <SelectTrigger className="bg-zinc-900 border-zinc-800">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="UP">Crosses Up</SelectItem>
+                                    <SelectItem value="DOWN">Crosses Down</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Price Level</Label>
+                            <Input
+                                type="number"
+                                step="any"
+                                value={params.level ?? 0}
+                                onChange={e => handleParamChange('level', parseFloat(e.target.value) || 0)}
+                                className="bg-zinc-900 border-zinc-800 font-mono text-sm"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* PRICE_IN_RANGE CONFIG */}
+                {type === 'CONDITION' && subType === 'PRICE_IN_RANGE' && (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Low Price</Label>
+                            <Input
+                                type="number"
+                                step="any"
+                                value={params.low ?? 0}
+                                onChange={e => handleParamChange('low', parseFloat(e.target.value) || 0)}
+                                className="bg-zinc-900 border-zinc-800 font-mono text-sm"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">High Price</Label>
+                            <Input
+                                type="number"
+                                step="any"
+                                value={params.high ?? 0}
+                                onChange={e => handleParamChange('high', parseFloat(e.target.value) || 0)}
+                                className="bg-zinc-900 border-zinc-800 font-mono text-sm"
+                            />
+                        </div>
+                    </div>
+                )}
+
                 {/* ACTION CONFIG */}
                 {type === 'ACTION' && (subType === 'OPEN_LONG' || subType === 'OPEN_SHORT') && (
                     <div className="space-y-4">
@@ -117,6 +171,26 @@ export function Inspector() {
                                 />
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {/* SET_LONG_UNITS / SET_SHORT_UNITS CONFIG */}
+                {type === 'ACTION' && (subType === 'SET_LONG_UNITS' || subType === 'SET_SHORT_UNITS') && (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Units</Label>
+                            <Input
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={params.units ?? 1}
+                                onChange={e => handleParamChange('units', parseInt(e.target.value) || 0)}
+                                className="bg-zinc-900 border-zinc-800 font-mono text-sm"
+                            />
+                        </div>
+                        <p className="text-[10px] text-zinc-600">
+                            {subType === 'SET_LONG_UNITS' ? 'Set number of long hedge units' : 'Set number of short hedge units'}
+                        </p>
                     </div>
                 )}
 
@@ -217,6 +291,108 @@ export function Inspector() {
                             <p><strong className="text-white">AND:</strong> Both inputs must be true</p>
                             <p className="mt-1"><strong className="text-white">OR:</strong> At least one input must be true</p>
                         </div>
+                    </div>
+                )}
+
+                {/* HEDGE (MIN_HEDGE) CONFIG */}
+                {type === 'HEDGE' && (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Min Long Units</Label>
+                            <Input
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={params.minLongUnits ?? 0}
+                                onChange={e => handleParamChange('minLongUnits', parseInt(e.target.value) || 0)}
+                                className="bg-zinc-900 border-zinc-800 font-mono text-sm"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Min Short Units</Label>
+                            <Input
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={params.minShortUnits ?? 0}
+                                onChange={e => handleParamChange('minShortUnits', parseInt(e.target.value) || 0)}
+                                className="bg-zinc-900 border-zinc-800 font-mono text-sm"
+                            />
+                        </div>
+                        <p className="text-[10px] text-zinc-600">
+                            Minimum hedge guard configuration. Validation ensures values are set.
+                        </p>
+                    </div>
+                )}
+
+                {/* GUARD: COOLDOWN_BARS CONFIG */}
+                {type === 'GUARD' && subType === 'COOLDOWN_BARS' && (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Cooldown Bars</Label>
+                            <Input
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={params.bars ?? 5}
+                                onChange={e => handleParamChange('bars', parseInt(e.target.value) || 1)}
+                                className="bg-zinc-900 border-zinc-800 font-mono text-sm"
+                            />
+                        </div>
+                        <p className="text-[10px] text-zinc-600">
+                            Action tetiklendikten sonra N bar boyunca tekrar tetiklenmez. Spam önler.
+                        </p>
+                    </div>
+                )}
+
+                {/* GUARD: ONCE_PER_CROSS CONFIG */}
+                {type === 'GUARD' && subType === 'ONCE_PER_CROSS' && (
+                    <div className="space-y-4">
+                        <p className="text-[10px] text-zinc-600">
+                            Bu guard aktif olduğunda, PRICE_CROSS_LEVEL veya CROSSOVER koşulları yalnızca kesişim anında bir kez tetiklenir. Tekrar spam önler.
+                        </p>
+                    </div>
+                )}
+
+                {/* EXPR (Custom Expression) CONFIG */}
+                {type === 'EXPR' && (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Boolean Expression</Label>
+                            <textarea
+                                value={params.expression ?? ''}
+                                onChange={e => handleParamChange('expression', e.target.value)}
+                                placeholder="rsi(close,14) < 30 && ema(close,20) > ema(close,50)"
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg font-mono text-xs p-2 h-24 resize-none text-white"
+                            />
+                        </div>
+                        <div className="p-2 bg-black/30 rounded text-[10px] text-zinc-500">
+                            <strong className="text-zinc-400">Whitelist:</strong> ema, sma, rsi, highest, lowest, abs, min, max
+                        </div>
+                        <div className="p-2 bg-fuchsia-500/10 rounded text-[10px] text-fuchsia-300">
+                            <strong>Örnek:</strong> rsi(close,14) {'<'} 30 && ema(close,20) {'>'} ema(close,50)
+                        </div>
+                    </div>
+                )}
+
+                {/* CLOSE_PARTIAL_PCT CONFIG */}
+                {type === 'ACTION' && subType === 'CLOSE_PARTIAL_PCT' && (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Close Percentage</Label>
+                            <Input
+                                type="number"
+                                min={1}
+                                max={100}
+                                step={1}
+                                value={params.pct ?? 50}
+                                onChange={e => handleParamChange('pct', parseInt(e.target.value) || 50)}
+                                className="bg-zinc-900 border-zinc-800 font-mono text-sm"
+                            />
+                        </div>
+                        <p className="text-[10px] text-zinc-600">
+                            Açık pozisyonun yüzde kaçını kapatacağını belirler.
+                        </p>
                     </div>
                 )}
 

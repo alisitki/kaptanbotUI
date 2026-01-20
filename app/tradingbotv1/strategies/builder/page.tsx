@@ -1,13 +1,13 @@
-
 "use client";
 
 import { Canvas } from "@/components/strategy-builder/Canvas";
 import { BlockLibrary } from "@/components/strategy-builder/BlockLibrary";
 import { Inspector } from "@/components/strategy-builder/Inspector";
+import { ValidationPanel } from "@/components/strategy-builder/ValidationPanel";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Save, Play, Download, Upload, CheckCircle2, AlertTriangle, LayoutTemplate } from "lucide-react";
+import { Save, Download, Upload, CheckCircle2, AlertTriangle, LayoutTemplate, LayoutGrid, Undo2, Redo2 } from "lucide-react";
 import { useBuilderStore } from "@/lib/strategies/builder/store";
 import { STRATEGY_TEMPLATES } from "@/lib/strategies/builder/templates";
 import { toast } from "sonner";
@@ -21,9 +21,23 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog";
 
+const TEMPLATE_DESCRIPTIONS: Record<string, string> = {
+    'EMA_CROSS_LONG': 'Classic trend following with dual EMAs',
+    'RSI_OVERSOLD': 'Mean reversion using RSI < 30',
+    'BREAKOUT': 'Breakout strategy using Donchian channels',
+    'KAPTAN_HEDGE_REBALANCE': 'Hedge rebalancing with price level cross',
+    'RANGE_COOLDOWN': 'Price range strategy with cooldown guard',
+    'EXPR_EXAMPLE': 'Custom expression with EMA + RSI combo'
+};
+
 export default function StrategyBuilderPage() {
-    const { meta, setMeta, getStrategyJSON, loadStrategy, reset, validate, validationErrors } = useBuilderStore();
+    const {
+        meta, setMeta, getStrategyJSON, loadStrategy, reset, validate,
+        validationErrors, autoLayout, undo, redo, canUndo, canRedo
+    } = useBuilderStore();
     const [showTemplates, setShowTemplates] = useState(false);
+
+    const [showValidationSuccess, setShowValidationSuccess] = useState(false);
 
     const handleLoadTemplate = (key: string) => {
         const template = STRATEGY_TEMPLATES[key];
@@ -37,17 +51,17 @@ export default function StrategyBuilderPage() {
     const handleValidate = () => {
         const isValid = validate();
         if (isValid) {
-            toast.success("Strategy is Valid", { icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" /> });
+            setShowValidationSuccess(true);
+            // toast.success("Strategy is Valid", { icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" /> });
         } else {
             toast.error("Validation Failed", {
-                description: "Check the status bar for details.",
+                description: "Check the panel below for details.",
                 icon: <AlertTriangle className="h-4 w-4 text-amber-500" />
             });
         }
     };
 
     const handleSave = () => {
-        // Just trigger toast for local persistence (which happens auto via zustand persist)
         toast.success("Strategy Draft Saved", {
             description: "Your work is saved locally."
         });
@@ -76,6 +90,8 @@ export default function StrategyBuilderPage() {
                         const json = JSON.parse(e.target?.result as string);
                         loadStrategy(json);
                         toast.success("Strategy Loaded");
+                        // Run validation after import
+                        setTimeout(() => validate(), 100);
                     } catch (err) {
                         toast.error("Invalid Strategy JSON");
                     }
@@ -84,6 +100,11 @@ export default function StrategyBuilderPage() {
             }
         };
         input.click();
+    };
+
+    const handleAutoLayout = () => {
+        autoLayout();
+        toast.success("Auto arranged nodes");
     };
 
     return (
@@ -125,7 +146,37 @@ export default function StrategyBuilderPage() {
                     </Select>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                    {/* Undo/Redo */}
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => undo()}
+                        disabled={!canUndo()}
+                        className="h-8 text-zinc-400 hover:text-white disabled:opacity-30"
+                    >
+                        <Undo2 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => redo()}
+                        disabled={!canRedo()}
+                        className="h-8 text-zinc-400 hover:text-white disabled:opacity-30"
+                    >
+                        <Redo2 className="h-4 w-4" />
+                    </Button>
+
+                    <div className="h-4 w-px bg-white/10 mx-1" />
+
+                    {/* Auto Layout */}
+                    <Button variant="ghost" size="sm" onClick={handleAutoLayout} className="h-8 text-zinc-400 hover:text-white">
+                        <LayoutGrid className="h-4 w-4 mr-1" />
+                        <span className="text-xs">Auto</span>
+                    </Button>
+
+                    <div className="h-4 w-px bg-white/10 mx-1" />
+
                     <Dialog open={showTemplates} onOpenChange={setShowTemplates}>
                         <DialogTrigger asChild>
                             <Button variant="ghost" size="sm" className="h-8 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10">
@@ -133,14 +184,14 @@ export default function StrategyBuilderPage() {
                                 Templates
                             </Button>
                         </DialogTrigger>
-                        <DialogContent className="bg-zinc-900 border-zinc-800 text-white sm:max-w-md">
+                        <DialogContent className="bg-zinc-900 border-zinc-800 text-white sm:max-w-lg">
                             <DialogHeader>
                                 <DialogTitle>Choose a Strategy Template</DialogTitle>
                                 <DialogDescription className="text-zinc-400">
                                     Start with a pre-configured strategy structure.
                                 </DialogDescription>
                             </DialogHeader>
-                            <div className="grid gap-3 py-4">
+                            <div className="grid gap-2 py-4 max-h-80 overflow-y-auto">
                                 {Object.entries(STRATEGY_TEMPLATES).map(([key, tpl]) => (
                                     <button
                                         key={key}
@@ -149,9 +200,7 @@ export default function StrategyBuilderPage() {
                                     >
                                         <span className="font-medium text-zinc-200 group-hover:text-white">{tpl.meta.name}</span>
                                         <span className="text-xs text-zinc-500 mt-1">
-                                            {key === 'EMA_CROSS_LONG' ? 'Classic trend following with dual EMAs' :
-                                                key === 'RSI_OVERSOLD' ? 'Mean reversion using RSI < 30' :
-                                                    'Breakout strategy using Donchian channels'}
+                                            {TEMPLATE_DESCRIPTIONS[key] || 'Custom strategy template'}
                                         </span>
                                     </button>
                                 ))}
@@ -159,62 +208,64 @@ export default function StrategyBuilderPage() {
                         </DialogContent>
                     </Dialog>
 
-                    <div className="h-4 w-px bg-white/10 mx-2" />
+                    {/* Validation Success Dialog */}
+                    <Dialog open={showValidationSuccess} onOpenChange={setShowValidationSuccess}>
+                        <DialogContent className="bg-zinc-900 border-emerald-500/50 text-white sm:max-w-md border-2">
+                            <div className="flex flex-col items-center justify-center text-center py-6 gap-4">
+                                <div className="h-16 w-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                                    <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+                                </div>
+                                <div>
+                                    <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">
+                                        Strategy Valid!
+                                    </DialogTitle>
+                                    <DialogDescription className="text-zinc-400 mt-2 text-base">
+                                        Your strategy looks great. No errors found.<br />
+                                        Ready to export or run.
+                                    </DialogDescription>
+                                </div>
+                                <Button
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white w-full max-w-[200px] mt-2"
+                                    onClick={() => setShowValidationSuccess(false)}
+                                >
+                                    Awesome
+                                </Button>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
 
-                    <Button variant="ghost" size="sm" onClick={handleValidate} className="h-8 text-zinc-400 hover:text-white">
-                        <CheckCircle2 className="h-4 w-4 mr-2" />
-                        Validate
+                    <div className="h-4 w-px bg-white/10 mx-1" />
+
+                    <Button size="sm" onClick={handleValidate} className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white border-0 mr-1 shadow-sm shadow-emerald-500/20">
+                        <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                        <span className="text-xs font-medium">Validate Strategy</span>
                     </Button>
-                    <div className="h-4 w-px bg-white/10 mx-2" />
                     <Button variant="ghost" size="sm" onClick={handleImport} className="h-8 text-zinc-400 hover:text-white">
-                        <Upload className="h-4 w-4 mr-2" />
-                        Import
+                        <Upload className="h-4 w-4 mr-1" />
+                        <span className="text-xs">Import</span>
                     </Button>
                     <Button variant="ghost" size="sm" onClick={handleExport} className="h-8 text-zinc-400 hover:text-white">
-                        <Download className="h-4 w-4 mr-2" />
-                        Export
+                        <Download className="h-4 w-4 mr-1" />
+                        <span className="text-xs">Export</span>
                     </Button>
                     <Button variant="ghost" size="sm" onClick={reset} className="h-8 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10">
-                        Reset
+                        <span className="text-xs">Reset</span>
                     </Button>
-                    <div className="h-4 w-px bg-white/10 mx-2" />
+                    <div className="h-4 w-px bg-white/10 mx-1" />
                     <Button size="sm" onClick={handleSave} className="h-8 bg-indigo-500 hover:bg-indigo-600 text-white border-0">
-                        <Save className="h-4 w-4 mr-2" />
-                        Save Draft
+                        <Save className="h-4 w-4 mr-1" />
+                        <span className="text-xs">Save</span>
                     </Button>
                 </div>
             </header>
 
-            {/* Validation Errors Bar */}
-            {validationErrors.length > 0 && (() => {
-                const errorCount = validationErrors.filter(e => e.startsWith('[ERROR]')).length;
-                const warningCount = validationErrors.filter(e => e.startsWith('[WARNING]')).length;
-                return (
-                    <div className={`border-b px-4 py-2 flex items-start gap-3 ${errorCount > 0 ? 'bg-rose-500/10 border-rose-500/20' : 'bg-amber-500/10 border-amber-500/20'
-                        }`}>
-                        <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${errorCount > 0 ? 'text-rose-500' : 'text-amber-500'
-                            }`} />
-                        <div className="flex flex-col gap-1 flex-1">
-                            <div className="flex items-center gap-3 text-xs font-medium">
-                                {errorCount > 0 && <span className="text-rose-400">{errorCount} error{errorCount > 1 ? 's' : ''}</span>}
-                                {warningCount > 0 && <span className="text-amber-400">{warningCount} warning{warningCount > 1 ? 's' : ''}</span>}
-                            </div>
-                            {validationErrors.map((err, i) => (
-                                <span key={i} className={`text-[11px] ${err.startsWith('[ERROR]') ? 'text-rose-300/80' : 'text-amber-200/70'
-                                    }`}>
-                                    {err.replace('[ERROR] ', '').replace('[WARNING] ', '')}
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-                );
-            })()}
-
             {/* Main Workspace */}
-            <div className="flex flex-1 overflow-hidden">
+            <div className="flex flex-1 overflow-hidden relative">
                 <BlockLibrary />
                 <div className="flex-1 relative">
                     <Canvas />
+                    {/* Validation Panel (floating at bottom) */}
+                    {validationErrors.length > 0 && <ValidationPanel />}
                 </div>
                 <Inspector />
             </div>

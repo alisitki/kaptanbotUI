@@ -25,6 +25,12 @@ export default function TradingBotLayout({ children }: { children: React.ReactNo
             const auth = await checkAuth();
             const isLoginPage = pathname.includes('/login');
             const isOnboardingPage = pathname.includes('/onboarding');
+            const isBuilderPage = pathname.includes('/strategies/builder');
+
+            // Skip auth for builder page (development convenience)
+            if (isBuilderPage) {
+                return;
+            }
 
             if (!auth) {
                 // Not logged in

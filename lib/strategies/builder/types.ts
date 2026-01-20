@@ -19,8 +19,12 @@ export function getNodeOutputType(nodeType: BuilderNodeType, subType?: string): 
         case 'CONDITION':
         case 'LOGIC':
             return 'Boolean';
+        case 'EXPR':
+            return 'Boolean';
         case 'ACTION':
         case 'RISK':
+        case 'HEDGE':
+        case 'GUARD':
             return 'Config';
         default:
             return 'Series';
@@ -28,18 +32,26 @@ export function getNodeOutputType(nodeType: BuilderNodeType, subType?: string): 
 }
 
 // Get expected input types for a node's handles
-export function getHandleInputType(nodeType: BuilderNodeType, handleId: string): DataType[] {
+export function getHandleInputType(nodeType: BuilderNodeType, handleId: string, subType?: string): DataType[] {
     switch (nodeType) {
         case 'INDICATOR':
             return ['Series']; // Only Series input (from Candle Source)
         case 'CONDITION':
+            // Price conditions can also take Series for price input
+            if (subType === 'PRICE_CROSS_LEVEL' || subType === 'PRICE_IN_RANGE') {
+                return ['Series'];
+            }
             return ['Series', 'Scalar']; // Compare can take both
         case 'LOGIC':
             return ['Boolean']; // AND/OR needs boolean inputs
         case 'ACTION':
             return ['Boolean']; // Boolean gate only (Model B)
         case 'RISK':
-            return ['Config'];
+        case 'HEDGE':
+        case 'GUARD':
+            return []; // Config nodes - no inputs
+        case 'EXPR':
+            return ['Series']; // Takes price series
         case 'CANDLE_SOURCE':
             return ['Event']; // Event input from Trigger (Model B)
         case 'VALUE':
@@ -68,6 +80,12 @@ export function isConnectionValid(
     }
     if (sourceType === 'RISK') {
         return { valid: false, reason: 'Risk nodes are terminal' };
+    }
+    if (sourceType === 'HEDGE') {
+        return { valid: false, reason: 'Hedge guards are terminal' };
+    }
+    if (sourceType === 'GUARD') {
+        return { valid: false, reason: 'Guard nodes are terminal' };
     }
 
     // 2. Model B: Trigger can ONLY connect to CandleSource
@@ -127,7 +145,10 @@ export type BuilderNodeType =
     | 'LOGIC'
     | 'VALUE'
     | 'ACTION'
-    | 'RISK';
+    | 'RISK'
+    | 'HEDGE'
+    | 'GUARD'
+    | 'EXPR';
 
 export interface StrategyNodeData {
     label: string;
@@ -138,6 +159,9 @@ export interface StrategyNodeData {
     // Validation status
     isValid?: boolean;
     error?: string;
+    // Unknown node handling
+    isUnknown?: boolean;
+    originalType?: string;
 }
 
 export type StrategyNode = Node<StrategyNodeData>;

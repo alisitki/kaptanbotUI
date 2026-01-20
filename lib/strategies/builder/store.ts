@@ -1,3 +1,4 @@
+"use client";
 
 import { create } from 'zustand';
 import {
@@ -12,16 +13,28 @@ import {
 import { StrategyNode, StrategyEdge, StrategyMeta, SavedStrategy, isConnectionValid } from './types';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { toast } from 'sonner';
+import dagre from 'dagre';
+
+// Undo/Redo history entry
+interface HistoryEntry {
+    nodes: StrategyNode[];
+    edges: StrategyEdge[];
+}
 
 interface BuilderState {
     nodes: StrategyNode[];
     edges: StrategyEdge[];
     meta: StrategyMeta;
     selectedNodeId: string | null;
+    selectedNodeIds: string[]; // Multi-select
     isDirty: boolean;
-    validationErrors: string[];
+    validationErrors: { nodeId?: string; message: string; hint?: string }[];
     errorNodeIds: string[];
     warningNodeIds: string[];
+
+    // Undo/Redo
+    history: HistoryEntry[];
+    historyIndex: number;
 
     // Actions
     onNodesChange: (changes: NodeChange[]) => void;
@@ -30,8 +43,26 @@ interface BuilderState {
     addNode: (node: StrategyNode) => void;
     updateNodeData: (id: string, data: Partial<StrategyNode['data']>) => void;
     removeNode: (id: string) => void;
+    removeSelectedNodes: () => void;
     setSelectedNode: (id: string | null) => void;
+    setSelectedNodes: (ids: string[]) => void;
+    toggleNodeSelection: (id: string) => void;
     setMeta: (meta: Partial<StrategyMeta>) => void;
+
+    // Undo/Redo
+    undo: () => void;
+    redo: () => void;
+    pushHistory: () => void;
+    canUndo: () => boolean;
+    canRedo: () => boolean;
+
+    // Layout
+    autoLayout: () => void;
+
+    // Zoom to node
+    zoomToNode: (nodeId: string) => void;
+    setZoomToNodeCallback: (cb: (nodeId: string) => void) => void;
+    _zoomCallback: ((nodeId: string) => void) | null;
 
     // Config
     reset: () => void;
@@ -91,6 +122,7 @@ const createDefaultGraph = (): { nodes: StrategyNode[]; edges: StrategyEdge[] } 
 });
 
 const DEFAULT_GRAPH = createDefaultGraph();
+const MAX_HISTORY = 50;
 
 export const useBuilderStore = create<BuilderState>()(
     persist(
@@ -99,16 +131,52 @@ export const useBuilderStore = create<BuilderState>()(
             edges: DEFAULT_GRAPH.edges,
             meta: DEFAULT_META,
             selectedNodeId: null,
+            selectedNodeIds: [],
             isDirty: false,
             validationErrors: [],
             errorNodeIds: [],
             warningNodeIds: [],
+            history: [],
+            historyIndex: -1,
+            _zoomCallback: null,
+
+            pushHistory: () => {
+                const { nodes, edges, history, historyIndex } = get();
+                const newHistory = history.slice(0, historyIndex + 1);
+                newHistory.push({ nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) });
+                if (newHistory.length > MAX_HISTORY) newHistory.shift();
+                set({ history: newHistory, historyIndex: newHistory.length - 1 });
+            },
+
+            canUndo: () => get().historyIndex > 0,
+            canRedo: () => get().historyIndex < get().history.length - 1,
+
+            undo: () => {
+                const { historyIndex, history } = get();
+                if (historyIndex <= 0) return;
+                const newIndex = historyIndex - 1;
+                const entry = history[newIndex];
+                // Don't restore if it would remove core nodes
+                const hasTrigger = entry.nodes.some(n => n.data.type === 'TRIGGER');
+                const hasCandle = entry.nodes.some(n => n.data.type === 'CANDLE_SOURCE');
+                if (!hasTrigger || !hasCandle) return;
+                set({ nodes: entry.nodes, edges: entry.edges, historyIndex: newIndex, isDirty: true });
+            },
+
+            redo: () => {
+                const { historyIndex, history } = get();
+                if (historyIndex >= history.length - 1) return;
+                const newIndex = historyIndex + 1;
+                const entry = history[newIndex];
+                set({ nodes: entry.nodes, edges: entry.edges, historyIndex: newIndex, isDirty: true });
+            },
 
             onNodesChange: (changes) => {
+                const { nodes, pushHistory } = get();
                 // Filter out removal of core nodes
                 const filteredChanges = changes.filter(change => {
                     if (change.type === 'remove') {
-                        const node = get().nodes.find(n => n.id === change.id);
+                        const node = nodes.find(n => n.id === change.id);
                         if (node?.data.isCore) {
                             toast.error("Core nodes cannot be deleted");
                             return false;
@@ -119,13 +187,21 @@ export const useBuilderStore = create<BuilderState>()(
 
                 if (filteredChanges.length === 0) return;
 
+                // Push history before significant changes
+                const hasRemove = filteredChanges.some(c => c.type === 'remove');
+                if (hasRemove) pushHistory();
+
                 set({
-                    nodes: applyNodeChanges(filteredChanges, get().nodes),
+                    nodes: applyNodeChanges(filteredChanges, nodes),
                     isDirty: true
                 });
             },
 
             onEdgesChange: (changes) => {
+                const { pushHistory } = get();
+                const hasRemove = changes.some(c => c.type === 'remove');
+                if (hasRemove) pushHistory();
+
                 set({
                     edges: applyEdgeChanges(changes, get().edges),
                     isDirty: true
@@ -135,7 +211,7 @@ export const useBuilderStore = create<BuilderState>()(
             onConnect: (connection) => {
                 if (!connection.source || !connection.target) return;
 
-                const { nodes, edges } = get();
+                const { nodes, edges, pushHistory } = get();
                 const sourceNode = nodes.find(n => n.id === connection.source);
                 const targetNode = nodes.find(n => n.id === connection.target);
 
@@ -177,6 +253,8 @@ export const useBuilderStore = create<BuilderState>()(
                 const exists = edges.some(e => e.source === connection.source && e.target === connection.target && e.sourceHandle === connection.sourceHandle && e.targetHandle === connection.targetHandle);
                 if (exists) return;
 
+                pushHistory();
+
                 const edge: StrategyEdge = {
                     ...connection,
                     id: `e-${connection.source}-${connection.target}-${Date.now()}`,
@@ -193,7 +271,7 @@ export const useBuilderStore = create<BuilderState>()(
             },
 
             addNode: (node) => {
-                const { nodes } = get();
+                const { nodes, pushHistory } = get();
 
                 if (node.data.type === 'TRIGGER') {
                     toast.error("Strategy already has a Trigger.");
@@ -213,14 +291,34 @@ export const useBuilderStore = create<BuilderState>()(
                     }
                 }
 
+                if (node.data.type === 'HEDGE') {
+                    const hasHedge = nodes.some(n => n.data.type === 'HEDGE');
+                    if (hasHedge) {
+                        toast.error("Strategy can only have one Hedge Guard.");
+                        return;
+                    }
+                }
+
+                if (node.data.type === 'GUARD' && node.data.subType === 'COOLDOWN_BARS') {
+                    const hasCooldown = nodes.some(n => n.data.type === 'GUARD' && n.data.subType === 'COOLDOWN_BARS');
+                    if (hasCooldown) {
+                        toast.error("Strategy can only have one Cooldown Guard.");
+                        return;
+                    }
+                }
+
+                pushHistory();
+
                 set((state) => ({
                     nodes: [...state.nodes, node],
                     selectedNodeId: node.id,
+                    selectedNodeIds: [node.id],
                     isDirty: true
                 }));
             },
 
             updateNodeData: (id, data) => {
+                get().pushHistory();
                 set((state) => ({
                     nodes: state.nodes.map((node) =>
                         node.id === id ? { ...node, data: { ...node.data, ...data } } : node
@@ -230,58 +328,147 @@ export const useBuilderStore = create<BuilderState>()(
             },
 
             removeNode: (id) => {
-                const { nodes } = get();
+                const { nodes, pushHistory } = get();
                 const node = nodes.find(n => n.id === id);
                 if (node?.data.isCore) {
                     toast.error("Core nodes cannot be deleted");
                     return;
                 }
 
+                pushHistory();
+
                 set((state) => ({
                     nodes: state.nodes.filter((node) => node.id !== id),
                     edges: state.edges.filter((edge) => edge.source !== id && edge.target !== id),
                     selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+                    selectedNodeIds: state.selectedNodeIds.filter(nid => nid !== id),
                     isDirty: true
                 }));
             },
 
-            setSelectedNode: (id) => set({ selectedNodeId: id }),
+            removeSelectedNodes: () => {
+                const { selectedNodeIds, nodes, pushHistory } = get();
+                const toRemove = selectedNodeIds.filter(id => {
+                    const node = nodes.find(n => n.id === id);
+                    return node && !node.data.isCore;
+                });
+                if (toRemove.length === 0) return;
+
+                pushHistory();
+
+                set((state) => ({
+                    nodes: state.nodes.filter(n => !toRemove.includes(n.id)),
+                    edges: state.edges.filter(e => !toRemove.includes(e.source) && !toRemove.includes(e.target)),
+                    selectedNodeId: null,
+                    selectedNodeIds: [],
+                    isDirty: true
+                }));
+            },
+
+            setSelectedNode: (id) => set({ selectedNodeId: id, selectedNodeIds: id ? [id] : [] }),
+
+            setSelectedNodes: (ids) => set({ selectedNodeIds: ids, selectedNodeId: ids[0] || null }),
+
+            toggleNodeSelection: (id) => {
+                const { selectedNodeIds } = get();
+                if (selectedNodeIds.includes(id)) {
+                    set({ selectedNodeIds: selectedNodeIds.filter(nid => nid !== id), selectedNodeId: null });
+                } else {
+                    set({ selectedNodeIds: [...selectedNodeIds, id], selectedNodeId: id });
+                }
+            },
 
             setMeta: (meta) => set((state) => ({ meta: { ...state.meta, ...meta }, isDirty: true })),
+
+            setZoomToNodeCallback: (cb) => set({ _zoomCallback: cb }),
+
+            zoomToNode: (nodeId) => {
+                const { _zoomCallback, nodes } = get();
+                const node = nodes.find(n => n.id === nodeId);
+                if (node && _zoomCallback) {
+                    _zoomCallback(nodeId);
+                }
+                set({ selectedNodeId: nodeId, selectedNodeIds: [nodeId] });
+            },
+
+            autoLayout: () => {
+                const { nodes, edges, pushHistory } = get();
+                if (nodes.length === 0) return;
+
+                pushHistory();
+
+                const g = new dagre.graphlib.Graph();
+                g.setDefaultEdgeLabel(() => ({}));
+                g.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 120 });
+
+                nodes.forEach(node => {
+                    g.setNode(node.id, { width: 180, height: 100 });
+                });
+
+                edges.forEach(edge => {
+                    g.setEdge(edge.source, edge.target);
+                });
+
+                dagre.layout(g);
+
+                const newNodes = nodes.map(node => {
+                    const pos = g.node(node.id);
+                    return {
+                        ...node,
+                        position: { x: pos.x - 90, y: pos.y - 50 }
+                    };
+                });
+
+                set({ nodes: newNodes, isDirty: true });
+            },
 
             reset: () => set({
                 nodes: DEFAULT_GRAPH.nodes,
                 edges: DEFAULT_GRAPH.edges,
                 meta: DEFAULT_META,
                 selectedNodeId: null,
+                selectedNodeIds: [],
                 isDirty: false,
                 validationErrors: [],
                 errorNodeIds: [],
-                warningNodeIds: []
+                warningNodeIds: [],
+                history: [],
+                historyIndex: -1
             }),
 
             loadStrategy: (strategy) => {
                 let nodes = [...(strategy.nodes || [])];
                 let edges = [...(strategy.edges || [])];
 
+                // Handle unknown node types
+                const knownTypes = ['triggerNode', 'candleSourceNode', 'indicatorNode', 'conditionNode',
+                    'actionNode', 'riskNode', 'hedgeNode', 'logicNode', 'valueNode',
+                    'guardNode', 'exprNode'];
+                nodes = nodes.map(n => {
+                    if (!knownTypes.includes(n.type || '')) {
+                        return {
+                            ...n,
+                            type: 'unknownNode',
+                            data: { ...n.data, originalType: n.type, isUnknown: true }
+                        };
+                    }
+                    return n;
+                });
+
                 // --- Normalize TRIGGER ---
                 const triggers = nodes.filter(n => n.data.type === 'TRIGGER');
                 let mainTriggerId = '';
 
                 if (triggers.length === 0) {
-                    // Add missing trigger
                     const defaultTrigger = DEFAULT_GRAPH.nodes.find(n => n.data.type === 'TRIGGER')!;
                     nodes.push(defaultTrigger);
                     mainTriggerId = defaultTrigger.id;
                 } else {
                     mainTriggerId = triggers[0].id;
-                    // Mark as core
                     nodes = nodes.map(n => n.id === mainTriggerId ? { ...n, data: { ...n.data, isCore: true } } : n);
-                    // Remove duplicates
                     if (triggers.length > 1) {
                         const duplicateIds = triggers.slice(1).map(t => t.id);
                         nodes = nodes.filter(n => !duplicateIds.includes(n.id));
-                        // Redirect edges from duplicates to main
                         edges = edges.map(e => duplicateIds.includes(e.source) ? { ...e, source: mainTriggerId } : e);
                         edges = edges.map(e => duplicateIds.includes(e.target) ? { ...e, target: mainTriggerId } : e);
                     }
@@ -292,25 +479,21 @@ export const useBuilderStore = create<BuilderState>()(
                 let mainCandleId = '';
 
                 if (candleSources.length === 0) {
-                    // Add missing candle source
                     const defaultCandle = DEFAULT_GRAPH.nodes.find(n => n.data.type === 'CANDLE_SOURCE')!;
                     nodes.push(defaultCandle);
                     mainCandleId = defaultCandle.id;
                 } else {
                     mainCandleId = candleSources[0].id;
-                    // Mark as core
                     nodes = nodes.map(n => n.id === mainCandleId ? { ...n, data: { ...n.data, isCore: true } } : n);
-                    // Remove duplicates
                     if (candleSources.length > 1) {
                         const duplicateIds = candleSources.slice(1).map(c => c.id);
                         nodes = nodes.filter(n => !duplicateIds.includes(n.id));
-                        // Redirect edges
                         edges = edges.map(e => duplicateIds.includes(e.source) ? { ...e, source: mainCandleId } : e);
                         edges = edges.map(e => duplicateIds.includes(e.target) ? { ...e, target: mainCandleId } : e);
                     }
                 }
 
-                // Remove exact duplicate edges that might have been created by redirection
+                // Remove exact duplicate edges
                 const seenEdges = new Set<string>();
                 edges = edges.filter(e => {
                     const key = `${e.source}-${e.target}-${e.sourceHandle}-${e.targetHandle}`;
@@ -324,34 +507,43 @@ export const useBuilderStore = create<BuilderState>()(
                     edges,
                     meta: strategy.meta || DEFAULT_META,
                     selectedNodeId: null,
+                    selectedNodeIds: [],
                     isDirty: false,
                     validationErrors: [],
                     errorNodeIds: [],
-                    warningNodeIds: []
+                    warningNodeIds: [],
+                    history: [{ nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }],
+                    historyIndex: 0
                 });
             },
 
             validate: () => {
                 const { nodes, edges } = get();
-                const errors: string[] = [];
+                const errors: { nodeId?: string; message: string; hint?: string }[] = [];
                 const errorNodes: string[] = [];
                 const warningNodes: string[] = [];
+
+                // Unknown nodes error
+                nodes.filter(n => n.data.isUnknown).forEach(n => {
+                    errors.push({ nodeId: n.id, message: `[ERROR] Unknown node type: ${n.data.originalType}`, hint: 'Remove or update this node' });
+                    errorNodes.push(n.id);
+                });
 
                 // Model B: Exactly 1 Trigger
                 const triggers = nodes.filter(n => n.data.type === 'TRIGGER');
                 if (triggers.length === 0) {
-                    errors.push("[ERROR] Strategy must have exactly one Trigger.");
+                    errors.push({ message: "[ERROR] Strategy must have exactly one Trigger." });
                 } else if (triggers.length > 1) {
-                    errors.push("[ERROR] Strategy can only have one Trigger.");
+                    errors.push({ message: "[ERROR] Strategy can only have one Trigger." });
                     triggers.forEach(t => errorNodes.push(t.id));
                 }
 
                 // Model B: Exactly 1 CandleSource
                 const candleSources = nodes.filter(n => n.data.type === 'CANDLE_SOURCE');
                 if (candleSources.length === 0) {
-                    errors.push("[ERROR] Strategy must have exactly one Candle Source.");
+                    errors.push({ message: "[ERROR] Strategy must have exactly one Candle Source." });
                 } else if (candleSources.length > 1) {
-                    errors.push("[ERROR] Strategy can only have one Candle Source.");
+                    errors.push({ message: "[ERROR] Strategy can only have one Candle Source." });
                     candleSources.forEach(c => errorNodes.push(c.id));
                 }
 
@@ -361,7 +553,7 @@ export const useBuilderStore = create<BuilderState>()(
                         e.source === triggers[0].id && e.target === candleSources[0].id
                     );
                     if (!triggerToCandleEdge) {
-                        errors.push("[ERROR] Trigger must connect to Candle Source.");
+                        errors.push({ nodeId: triggers[0].id, message: "[ERROR] Trigger must connect to Candle Source.", hint: 'Connect Trigger event output to Candle Source' });
                         errorNodes.push(triggers[0].id);
                         errorNodes.push(candleSources[0].id);
                     }
@@ -369,9 +561,9 @@ export const useBuilderStore = create<BuilderState>()(
 
                 // Reachability from Trigger
                 if (triggers.length >= 1) {
-                    const triggerAndId = triggers[0].id;
-                    const reachable = new Set<string>([triggerAndId]);
-                    const queue = [triggerAndId];
+                    const triggerId = triggers[0].id;
+                    const reachable = new Set<string>([triggerId]);
+                    const queue = [triggerId];
                     while (queue.length > 0) {
                         const current = queue.shift()!;
                         const outgoing = edges.filter(e => e.source === current);
@@ -385,24 +577,35 @@ export const useBuilderStore = create<BuilderState>()(
 
                     const actions = nodes.filter(n => n.data.type === 'ACTION');
                     if (actions.length === 0) {
-                        errors.push("[ERROR] Strategy needs at least one Action node.");
+                        errors.push({ message: "[ERROR] Strategy needs at least one Action node." });
                     } else {
-                        const reachableAction = actions.some(a => reachable.has(a.id));
-                        if (!reachableAction) {
-                            errors.push("[ERROR] No Action is reachable from the Trigger.");
-                            actions.forEach(a => errorNodes.push(a.id));
-                        }
+                        // Check each action has boolean gate upstream
+                        actions.forEach(action => {
+                            if (!reachable.has(action.id)) {
+                                errors.push({ nodeId: action.id, message: `[ERROR] '${action.data.label}' not reachable from Trigger.`, hint: 'Connect this action to the main flow' });
+                                errorNodes.push(action.id);
+                            } else {
+                                // Check boolean input
+                                const incoming = edges.filter(e => e.target === action.id && e.targetHandle === 'trigger');
+                                if (incoming.length === 0) {
+                                    errors.push({ nodeId: action.id, message: `[ERROR] '${action.data.label}' has no trigger input.`, hint: 'Connect a condition/logic gate to trigger input' });
+                                    errorNodes.push(action.id);
+                                }
+                            }
+                        });
                     }
 
-                    // Unreachable nodes warning (exclude Risk/Value)
+                    // Unreachable nodes warning (exclude config nodes)
                     const unreachable = nodes.filter(n =>
                         !reachable.has(n.id) &&
                         n.data.type !== 'RISK' &&
-                        n.data.type !== 'VALUE'
+                        n.data.type !== 'VALUE' &&
+                        n.data.type !== 'HEDGE' &&
+                        n.data.type !== 'GUARD'
                     );
 
                     if (unreachable.length > 0) {
-                        errors.push(`[WARNING] ${unreachable.length} node(s) unreachable from trigger.`);
+                        errors.push({ message: `[WARNING] ${unreachable.length} node(s) unreachable from trigger.` });
                         unreachable.forEach(u => warningNodes.push(u.id));
                     }
                 }
@@ -411,39 +614,116 @@ export const useBuilderStore = create<BuilderState>()(
                 nodes.forEach(n => {
                     // Indicator: Check Period
                     if (n.data.type === 'INDICATOR' && !n.data.params?.period) {
-                        errors.push(`[ERROR] '${n.data.label}' missing 'period'.`);
+                        errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' missing 'period'.`, hint: 'Set period parameter in Inspector' });
                         errorNodes.push(n.id);
                     }
 
-                    // Compare/Crossover: Check Inputs
-                    if (n.data.type === 'CONDITION') {
+                    // Compare/Crossover: Check Inputs (skip price conditions)
+                    if (n.data.type === 'CONDITION' &&
+                        n.data.subType !== 'PRICE_CROSS_LEVEL' &&
+                        n.data.subType !== 'PRICE_IN_RANGE') {
                         const incoming = edges.filter(e => e.target === n.id);
                         const hasA = incoming.some(e => e.targetHandle === 'a');
                         const hasB = incoming.some(e => e.targetHandle === 'b');
 
                         if (!hasA || !hasB) {
-                            errors.push(`[ERROR] '${n.data.label}' requires 2 inputs.`);
+                            errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' requires 2 inputs.`, hint: 'Connect indicators or values to A and B inputs' });
                             errorNodes.push(n.id);
                         }
 
                         if (n.data.subType === 'COMPARE' && !n.data.params?.op) {
-                            errors.push(`[ERROR] '${n.data.label}' missing operator.`);
+                            errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' missing operator.`, hint: 'Select operator in Inspector' });
                             errorNodes.push(n.id);
                         }
                         if (n.data.subType === 'CROSSOVER' && !n.data.params?.direction) {
-                            errors.push(`[ERROR] '${n.data.label}' missing direction.`);
+                            errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' missing direction.`, hint: 'Select UP or DOWN in Inspector' });
                             errorNodes.push(n.id);
                         }
                     }
 
                     // Candle Source Warning
                     if (n.data.type === 'CANDLE_SOURCE') {
-                        // Check if it has any outgoing connections
                         const outgoing = edges.filter(e => e.source === n.id);
                         if (outgoing.length === 0) {
-                            errors.push(`[WARNING] Candle Source not connected.`);
+                            errors.push({ nodeId: n.id, message: `[WARNING] Candle Source not connected.`, hint: 'Connect to indicators' });
                             warningNodes.push(n.id);
                         }
+                    }
+
+                    // EXPR validation
+                    if (n.data.type === 'EXPR') {
+                        const expr = n.data.params?.expression;
+                        if (!expr || expr.trim() === '') {
+                            errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' has no expression.`, hint: 'Enter a valid expression' });
+                            errorNodes.push(n.id);
+                        } else {
+                            // Basic validation
+                            const allowed = /^[a-zA-Z0-9_\s\(\)\+\-\*\/\<\>\=\!\&\|\.\,]+$/;
+                            if (!allowed.test(expr)) {
+                                errors.push({ nodeId: n.id, message: `[ERROR] Invalid characters in expression.`, hint: 'Only use: ema,sma,rsi,highest,lowest,abs,min,max' });
+                                errorNodes.push(n.id);
+                            }
+                        }
+                    }
+
+                    // COOLDOWN validation
+                    if (n.data.type === 'GUARD' && n.data.subType === 'COOLDOWN_BARS') {
+                        const bars = n.data.params?.bars;
+                        if (!bars || bars <= 0) {
+                            errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' needs bars > 0.`, hint: 'Set cooldown bars in Inspector' });
+                            errorNodes.push(n.id);
+                        }
+                    }
+                });
+
+                // HEDGE validation
+                nodes.filter(n => n.data.type === 'HEDGE').forEach(n => {
+                    const { minLongUnits, minShortUnits } = n.data.params || {};
+                    if (minLongUnits === undefined || minLongUnits === null || minLongUnits === '') {
+                        errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' missing minLongUnits.`, hint: 'Set minLongUnits in Inspector' });
+                        errorNodes.push(n.id);
+                    }
+                    if (minShortUnits === undefined || minShortUnits === null || minShortUnits === '') {
+                        errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' missing minShortUnits.`, hint: 'Set minShortUnits in Inspector' });
+                        errorNodes.push(n.id);
+                    }
+                });
+
+                // PRICE_CROSS_LEVEL validation
+                nodes.filter(n => n.data.type === 'CONDITION' && n.data.subType === 'PRICE_CROSS_LEVEL').forEach(n => {
+                    const incoming = edges.filter(e => e.target === n.id);
+                    if (!incoming.some(e => e.targetHandle === 'price')) {
+                        errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' needs price input.`, hint: 'Connect Candle Source series output' });
+                        errorNodes.push(n.id);
+                    }
+                    if (!n.data.params?.level && n.data.params?.level !== 0) {
+                        errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' missing level.`, hint: 'Set price level in Inspector' });
+                        errorNodes.push(n.id);
+                    }
+                });
+
+                // PRICE_IN_RANGE validation + spam warning
+                nodes.filter(n => n.data.type === 'CONDITION' && n.data.subType === 'PRICE_IN_RANGE').forEach(n => {
+                    const incoming = edges.filter(e => e.target === n.id);
+                    if (!incoming.some(e => e.targetHandle === 'price')) {
+                        errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' needs price input.`, hint: 'Connect Candle Source series output' });
+                        errorNodes.push(n.id);
+                    }
+                    const { low, high } = n.data.params || {};
+                    if (low === undefined || low === null || low === '') {
+                        errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' missing low value.`, hint: 'Set low price in Inspector' });
+                        errorNodes.push(n.id);
+                    }
+                    if (high === undefined || high === null || high === '') {
+                        errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' missing high value.`, hint: 'Set high price in Inspector' });
+                        errorNodes.push(n.id);
+                    }
+
+                    // Spam warning if no cooldown
+                    const hasCooldown = nodes.some(g => g.data.type === 'GUARD' && g.data.subType === 'COOLDOWN_BARS');
+                    if (!hasCooldown) {
+                        errors.push({ nodeId: n.id, message: `[WARNING] Price range may fire continuously. Add COOLDOWN_BARS guard.`, hint: 'Add Cooldown guard from Block Library' });
+                        warningNodes.push(n.id);
                     }
                 });
 
@@ -451,11 +731,10 @@ export const useBuilderStore = create<BuilderState>()(
                 const hasCandleSource = nodes.some(n => n.data.type === 'CANDLE_SOURCE');
                 const hasIndicators = nodes.some(n => n.data.type === 'INDICATOR');
                 if (hasIndicators && !hasCandleSource) {
-                    errors.push(`[WARNING] Strategy has indicators but no Candle Source.`);
+                    errors.push({ message: `[WARNING] Strategy has indicators but no Candle Source.` });
                 }
 
-                const errorCount = errors.filter(e => e.startsWith('[ERROR]')).length;
-                const warningCount = errors.filter(e => e.startsWith('[WARNING]')).length;
+                const errorCount = errors.filter(e => e.message.startsWith('[ERROR]')).length;
 
                 set({ validationErrors: errors, errorNodeIds: errorNodes, warningNodeIds: warningNodes });
                 return errorCount === 0;
@@ -466,8 +745,8 @@ export const useBuilderStore = create<BuilderState>()(
 
                 const trigger = nodes.find(n => n.data.type === 'TRIGGER');
                 const risk = nodes.find(n => n.data.type === 'RISK');
+                const cooldown = nodes.find(n => n.data.type === 'GUARD' && n.data.subType === 'COOLDOWN_BARS');
 
-                // Canonical v0.1 Defaults
                 const riskDefaults = {
                     positionSizePct: 10,
                     maxLeverage: 3,
@@ -478,7 +757,7 @@ export const useBuilderStore = create<BuilderState>()(
                 };
 
                 return {
-                    version: '0.1',
+                    version: '0.2',
                     meta,
                     graph: {
                         nodes: nodes.map(n => ({
@@ -509,6 +788,17 @@ export const useBuilderStore = create<BuilderState>()(
                         slPct: risk.data.params?.slPct ?? riskDefaults.slPct,
                         tpPct: risk.data.params?.tpPct ?? riskDefaults.tpPct
                     } : riskDefaults,
+                    hedge: (() => {
+                        const hedgeNode = nodes.find(n => n.data.type === 'HEDGE');
+                        if (!hedgeNode) return null;
+                        return {
+                            minLongUnits: hedgeNode.data.params?.minLongUnits ?? 0,
+                            minShortUnits: hedgeNode.data.params?.minShortUnits ?? 0
+                        };
+                    })(),
+                    guards: {
+                        cooldownBars: cooldown?.data.params?.bars || null
+                    }
                 };
             }
         }),
