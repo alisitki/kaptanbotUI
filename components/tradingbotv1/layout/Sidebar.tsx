@@ -21,20 +21,11 @@ import {
 export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
-    const { stop, checkAuth } = useBotStore();
+    const { logout } = useBotStore();
 
     const handleLogout = async () => {
-        try {
-            await apiPost('/auth/logout', {});
-            stop();
-            await checkAuth(); // Refresh state
-            router.replace('/tradingbotv1/login');
-        } catch (error) {
-            console.error("Logout failed", error);
-            // Even if it fails, try to clear local state
-            stop();
-            router.replace('/tradingbotv1/login');
-        }
+        await logout();
+        router.replace('/tradingbotv1/login');
     };
 
     const navItems = [

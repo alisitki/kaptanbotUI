@@ -10,13 +10,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiPost } from "@/lib/api/api";
 import { toast } from "sonner";
 import { useBotStore } from "@/lib/store";
-import { Loader2, Key, Settings, Rocket, CheckCircle2 } from "lucide-react";
+import { Loader2, Key, Settings, Rocket, CheckCircle2, LogOut } from "lucide-react";
 
 export default function OnboardingPage() {
     const [step, setStep] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
-    const { checkAuth } = useBotStore();
+    const { checkAuth, logout } = useBotStore();
+
+    const handleLogout = async () => {
+        await logout();
+        router.replace('/tradingbotv1/login');
+    };
 
     // Step 1: Binance Keys
     const [apiKey, setApiKey] = useState("");
@@ -90,6 +95,18 @@ export default function OnboardingPage() {
             {/* Background elements */}
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-900/10 rounded-full blur-[120px] pointer-events-none" />
             <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-purple-900/10 rounded-full blur-[100px] pointer-events-none" />
+
+            {/* Top Navigation / Logout */}
+            <div className="absolute top-8 right-8 z-50">
+                <Button
+                    variant="ghost"
+                    onClick={handleLogout}
+                    className="text-zinc-500 hover:text-red-400 hover:bg-red-500/10 gap-2 transition-all"
+                >
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                </Button>
+            </div>
 
             <div className="w-full max-w-2xl relative z-10">
                 {/* Stepper */}

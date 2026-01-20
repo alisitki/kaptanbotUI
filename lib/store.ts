@@ -1,7 +1,7 @@
 
 import { create } from 'zustand';
 import { getBaseUrl } from './api/runtime';
-import { apiGet } from './api/api';
+import { apiGet, apiPost } from './api/api';
 import { AppState, Watch, BotEvent } from './api/client/types';
 import { fetchSSE } from './api/client/sse';
 
@@ -27,6 +27,7 @@ interface BotStore {
     stop: () => void;
     setAccessDenied: (denied: boolean, reason?: "TOKEN_INVALID" | "IP_NOT_ALLOWED") => void;
     checkAuth: () => Promise<{ user: any, has_binance_keys: boolean } | null>;
+    logout: () => Promise<void>;
 }
 
 export const useBotStore = create<BotStore>((set, get) => {
@@ -189,5 +190,16 @@ export const useBotStore = create<BotStore>((set, get) => {
         },
 
         addEvent: (event) => set((s) => ({ events: [event, ...s.events].slice(0, 200) })),
+
+        logout: async () => {
+            try {
+                await apiPost('/auth/logout', {});
+            } catch (error) {
+                console.error("Logout API failed", error);
+            } finally {
+                get().stop();
+                set({ user: null, hasBinanceKeys: false, sseConnected: false, state: null, watches: [] });
+            }
+        },
     };
 });
