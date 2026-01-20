@@ -11,10 +11,8 @@ import {
     Gamepad2,
     Trophy,
     Flame,
-    Target,
-    Calendar,
-    Shuffle,
-    Clock
+    Clock,
+    Zap
 } from "lucide-react";
 import {
     Dialog,
@@ -35,18 +33,6 @@ export default function GamesPage() {
         if (typeof window === 'undefined') return [];
         return getSessions();
     });
-    const [selectedDate, setSelectedDate] = useState("");
-    const [dialogOpen, setDialogOpen] = useState(false);
-
-    const handleRandomStart = () => {
-        router.push('/games/play');
-    };
-
-    const handleDateStart = () => {
-        if (!selectedDate) return;
-        const timestamp = new Date(selectedDate + 'T00:00:00.000Z').getTime();
-        router.push(`/games/play?startTime=${timestamp}&mode=date`);
-    };
 
     return (
         <div className="flex h-screen w-full bg-[#020202] dark font-sans antialiased text-white selection:bg-indigo-500/30 overflow-hidden">
@@ -84,8 +70,8 @@ export default function GamesPage() {
                                     <div>
                                         <CardTitle className="text-2xl mb-2 text-white">Price Action Master</CardTitle>
                                         <CardDescription className="text-zinc-400 text-base">
-                                            Geçmiş grafik verileri üzerinde al/sat yaparak en yüksek PnL&apos;e ulaşmaya çalış.
-                                            Gerçek piyasa koşullarında risksiz antrenman. Fees ve slippage simülasyonu dahil.
+                                            Gerçek zamanlı Binance verileriyle anlık piyasa hareketlerini takip et ve al/sat yaparak stratejilerini test et.
+                                            Risksiz kağıt ticareti (Paper Trading) ile piyasa reflekslerini mükemmelleştir.
                                         </CardDescription>
                                     </div>
 
@@ -95,70 +81,20 @@ export default function GamesPage() {
                                             <span>Sanal bakiye: $10,000</span>
                                         </div>
                                         <div className="flex items-center gap-1">
-                                            <Target className="w-4 h-4 text-indigo-500" />
-                                            <span>500 mum / ~21 gün</span>
+                                            <Zap className="w-4 h-4 text-yellow-500" />
+                                            <span>Anlık Binance Verisi</span>
                                         </div>
                                     </div>
 
                                     {/* Action Buttons */}
                                     <div className="flex items-center gap-3 mt-2">
                                         <Button
-                                            onClick={handleRandomStart}
-                                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold"
-                                        >
-                                            <Shuffle className="w-4 h-4 mr-2" />
-                                            Rastgele Başla
-                                        </Button>
-
-                                        <Button
                                             onClick={() => router.push('/games/play?mode=realtime')}
-                                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold"
+                                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-8 h-12 text-lg shadow-lg shadow-emerald-600/20"
                                         >
-                                            <Flame className="w-4 h-4 mr-2" />
-                                            Canlı Piyasa
+                                            <Flame className="w-5 h-5 mr-2" />
+                                            Hemen Başla (Canlı)
                                         </Button>
-
-                                        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                                            <DialogTrigger asChild>
-                                                <Button variant="outline" className="border-white/10 hover:bg-white/5 text-white">
-                                                    <Calendar className="w-4 h-4 mr-2" />
-                                                    Tarih Seç
-                                                </Button>
-                                            </DialogTrigger>
-                                            <DialogContent className="bg-[#0A0A0A] border-white/10 text-white sm:max-w-[400px]">
-                                                <DialogHeader>
-                                                    <DialogTitle>Başlangıç Tarihi Seç</DialogTitle>
-                                                    <DialogDescription className="text-zinc-500">
-                                                        Belirli bir tarihten itibaren oyuna başlayın. O günün gerçek BTC fiyat hareketleri yüklenecek.
-                                                    </DialogDescription>
-                                                </DialogHeader>
-
-                                                <div className="space-y-4 py-4">
-                                                    <div className="space-y-2">
-                                                        <Label className="text-sm text-zinc-400">Tarih (YYYY-MM-DD)</Label>
-                                                        <Input
-                                                            type="date"
-                                                            className="bg-zinc-900 border-white/10 text-white"
-                                                            value={selectedDate}
-                                                            onChange={(e) => setSelectedDate(e.target.value)}
-                                                        />
-                                                    </div>
-
-                                                    <Button
-                                                        onClick={handleDateStart}
-                                                        disabled={!selectedDate}
-                                                        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"
-                                                    >
-                                                        <Gamepad2 className="w-4 h-4 mr-2" />
-                                                        Bu Tarihle Başla
-                                                    </Button>
-
-                                                    <p className="text-[10px] text-zinc-600 text-center">
-                                                        Seçilen tarihten itibaren 500 saatlik (~21 gün) veri yüklenecektir.
-                                                    </p>
-                                                </div>
-                                            </DialogContent>
-                                        </Dialog>
                                     </div>
                                 </div>
 
