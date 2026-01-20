@@ -14,15 +14,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 }
 
 async function handleRequest(req: NextRequest, pathArr: string[], method: string) {
-    const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.nobetix.com';
+    const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://157.180.19.240:3000';
     const path = pathArr.join('/');
     const searchParams = req.nextUrl.searchParams.toString();
     const targetUrl = `${backendUrl}/${path}${searchParams ? '?' + searchParams : ''}`;
 
     const headers = new Headers();
-    // Forward auth headers
+    // Forward essential headers
     const authHeader = req.headers.get('Authorization');
     if (authHeader) headers.set('Authorization', authHeader);
+
+    const cookieHeader = req.headers.get('Cookie');
+    if (cookieHeader) headers.set('Cookie', cookieHeader);
 
     const apiKey = req.headers.get('x-api-key');
     if (apiKey) headers.set('x-api-key', apiKey);
@@ -30,29 +33,39 @@ async function handleRequest(req: NextRequest, pathArr: string[], method: string
     headers.set('Content-Type', 'application/json');
 
     try {
+        const body = (method === 'POST' || method === 'PUT' || method === 'PATCH')
+            ? await req.text()
+            : undefined;
+
         const response = await fetch(targetUrl, {
             method,
             headers,
-            body: method === 'POST' ? await req.text() : undefined,
+            body,
         });
+
+        const responseHeaders = new Headers();
+        // Forward content type
+        responseHeaders.set('Content-Type', response.headers.get('content-type') || 'application/json');
+
+        // Forward Set-Cookie headers
+        const setCookie = response.headers.get('set-cookie');
+        if (setCookie) {
+            responseHeaders.set('Set-Cookie', setCookie);
+        }
 
         // Special handling for SSE
         if (response.headers.get('content-type')?.includes('text/event-stream')) {
+            responseHeaders.set('Cache-Control', 'no-cache');
+            responseHeaders.set('Connection', 'keep-alive');
             return new Response(response.body, {
-                headers: {
-                    'Content-Type': 'text/event-stream',
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
-                },
+                headers: responseHeaders,
             });
         }
 
         const data = await response.text();
         return new Response(data, {
             status: response.status,
-            headers: {
-                'Content-Type': response.headers.get('content-type') || 'application/json',
-            },
+            headers: responseHeaders,
         });
     } catch (error) {
         console.error('Proxy error:', error);

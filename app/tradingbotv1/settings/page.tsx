@@ -19,7 +19,7 @@ import { Send, Save } from "lucide-react";
 export default function SettingsPage() {
     const [settings, setSettings] = useState<BotSettings | null>(null);
     const [loading, setLoading] = useState(true);
-    const { stop } = useBotStore();
+    const { stop, checkAuth } = useBotStore();
     const router = useRouter();
 
     // General Form states
@@ -127,10 +127,17 @@ export default function SettingsPage() {
         }
     };
 
-    const handleLogout = () => {
-        localStorage.removeItem('tbv1_token');
-        stop();
-        router.replace('/tradingbotv1');
+    const handleLogout = async () => {
+        try {
+            await apiPost('/auth/logout', {});
+            stop();
+            await checkAuth(); // Refresh state
+            router.replace('/tradingbotv1/login');
+        } catch (error) {
+            console.error("Logout failed", error);
+            stop();
+            router.replace('/tradingbotv1/login');
+        }
     };
 
     if (loading) return <div>Loading settings...</div>;

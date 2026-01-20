@@ -6,6 +6,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { OhlcCandle } from "@/lib/api/client/types";
+import { useEffect, useState } from "react";
 
 interface PriceChartProps {
     data?: OhlcCandle[];
@@ -14,6 +15,12 @@ interface PriceChartProps {
 }
 
 export function PriceChart({ data, symbol = "BTCUSDT", loading }: PriceChartProps) {
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        const timer = setTimeout(() => setMounted(true), 50);
+        return () => clearTimeout(timer);
+    }, []);
+
     const chartData = useMemo(() => {
         if (!data || data.length === 0) return [];
         return data.map(d => {
@@ -61,47 +68,51 @@ export function PriceChart({ data, symbol = "BTCUSDT", loading }: PriceChartProp
                     <div className="h-full flex items-center justify-center text-zinc-600 animate-pulse">Loading...</div>
                 ) : chartData.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-zinc-600">No Data</div>
+                ) : !mounted ? (
+                    <div className="h-full" />
                 ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={chartData}>
-                            <defs>
-                                <linearGradient id="gPrice" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor={isPos ? "#10b981" : "#f43f5e"} stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor={isPos ? "#10b981" : "#f43f5e"} stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
-                            <XAxis
-                                dataKey="label"
-                                stroke="#52525b"
-                                fontSize={10}
-                                axisLine={false}
-                                tickLine={false}
-                                minTickGap={30}
-                            />
-                            <YAxis
-                                domain={['auto', 'auto']}
-                                stroke="#52525b"
-                                fontSize={10}
-                                axisLine={false}
-                                tickLine={false}
-                                width={60}
-                                tickFormatter={(v) => `$${v.toLocaleString()}`}
-                            />
-                            <Tooltip
-                                contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', color: '#fff' }}
-                                itemStyle={{ color: '#fff' }}
-                                labelStyle={{ color: '#a1a1aa' }}
-                            />
-                            <Area
-                                type="monotone"
-                                dataKey="price"
-                                stroke={isPos ? "#10b981" : "#f43f5e"}
-                                fill="url(#gPrice)"
-                                strokeWidth={2}
-                            />
-                        </AreaChart>
-                    </ResponsiveContainer>
+                    <div className="w-full h-[250px] mt-4">
+                        <ResponsiveContainer width="100%" height={250}>
+                            <AreaChart data={chartData}>
+                                <defs>
+                                    <linearGradient id="gPrice" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor={isPos ? "#10b981" : "#f43f5e"} stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor={isPos ? "#10b981" : "#f43f5e"} stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" />
+                                <XAxis
+                                    dataKey="label"
+                                    stroke="#52525b"
+                                    fontSize={10}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    minTickGap={30}
+                                />
+                                <YAxis
+                                    domain={['auto', 'auto']}
+                                    stroke="#52525b"
+                                    fontSize={10}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    width={60}
+                                    tickFormatter={(v) => `$${v.toLocaleString()}`}
+                                />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', color: '#fff' }}
+                                    itemStyle={{ color: '#fff' }}
+                                    labelStyle={{ color: '#a1a1aa' }}
+                                />
+                                <Area
+                                    type="monotone"
+                                    dataKey="price"
+                                    stroke={isPos ? "#10b981" : "#f43f5e"}
+                                    fill="url(#gPrice)"
+                                    strokeWidth={2}
+                                />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
                 )}
             </CardContent>
         </Card>

@@ -1,6 +1,6 @@
 
 import { create } from 'zustand';
-import { getBaseUrl, getToken, getAuthMethod } from './api/runtime';
+import { getBaseUrl } from './api/runtime';
 import { apiGet } from './api/api';
 import { AppState, Watch, BotEvent } from './api/client/types';
 import { fetchSSE } from './api/client/sse';
@@ -14,6 +14,11 @@ interface BotStore {
     accessDenied: boolean;
     accessDeniedReason?: "TOKEN_INVALID" | "IP_NOT_ALLOWED";
 
+    // Auth State
+    user: any | null;
+    hasBinanceKeys: boolean;
+    initialized: boolean;
+
     // Actions
     fetchState: () => Promise<void>;
     fetchWatches: () => Promise<void>;
@@ -21,6 +26,7 @@ interface BotStore {
     start: () => void;
     stop: () => void;
     setAccessDenied: (denied: boolean, reason?: "TOKEN_INVALID" | "IP_NOT_ALLOWED") => void;
+    checkAuth: () => Promise<{ user: any, has_binance_keys: boolean } | null>;
 }
 
 export const useBotStore = create<BotStore>((set, get) => {
@@ -28,6 +34,7 @@ export const useBotStore = create<BotStore>((set, get) => {
     let pollIntervalState: NodeJS.Timeout | null = null;
     let pollIntervalWatches: NodeJS.Timeout | null = null;
     let connectionTimeout: NodeJS.Timeout | null = null;
+    let isConnecting = false;
 
     const startPolling = () => {
         if (pollIntervalState) return; // Already polling
@@ -65,46 +72,53 @@ export const useBotStore = create<BotStore>((set, get) => {
         sseConnected: false,
         lastEventId: null,
         accessDenied: false,
+        user: null,
+        hasBinanceKeys: false,
+        initialized: false,
+
+        checkAuth: async () => {
+            try {
+                const data = await apiGet<any>('/auth/me');
+                set({ user: data.user, hasBinanceKeys: data.has_binance_keys, initialized: true, accessDenied: false });
+                return data;
+            } catch (error: any) {
+                set({ user: null, hasBinanceKeys: false, initialized: true });
+                if (error.status === 401) {
+                    set({ accessDenied: true, accessDeniedReason: "TOKEN_INVALID" });
+                }
+                return null;
+            }
+        },
 
         start: async () => {
-            const token = getToken();
-            if (!token) return;
+            if (get().sseConnected || isConnecting) return;
+
+            isConnecting = true;
 
             // Health check timeout - if no connection/event in 10s, start polling
             connectionTimeout = setTimeout(() => {
                 if (!get().sseConnected) {
                     startPolling();
                 }
+                isConnecting = false;
             }, 10000);
 
-            const method = getAuthMethod();
             const url = `${getBaseUrl()}/v1/stream`;
 
-            // Build headers/params based on method
             const fetchOptions: RequestInit = {
                 headers: {
                     'Accept': 'text/event-stream',
-                }
+                },
+                credentials: 'include' // Important for session cookies
             };
-
-            const headers = fetchOptions.headers as Record<string, string>;
-            if (method === 'BEARER' && url.includes('/v1/stream')) {
-                // Force Query for stream as per backend requirement
-            } else if (method === 'BEARER') {
-                headers['Authorization'] = `Bearer ${token}`;
-            } else if (method === 'API_KEY') {
-                headers['x-api-key'] = token;
-            }
-
-            const streamUrl = `${url}?token=${encodeURIComponent(token)}`;
 
             abortController = new AbortController();
             fetchOptions.signal = abortController.signal;
 
-            console.log("Starting SSE via Fetch...");
+            console.log("Starting SSE via Fetch (Cookie Auth)...");
 
             fetchSSE(
-                streamUrl,
+                url,
                 fetchOptions,
                 (ev) => {
                     // Handle events
@@ -112,9 +126,11 @@ export const useBotStore = create<BotStore>((set, get) => {
                         set({ sseConnected: true });
                         if (connectionTimeout) clearTimeout(connectionTimeout);
                         stopPolling();
+                        isConnecting = false;
                     }
 
                     try {
+                        if (!ev.data) return;
                         const data = JSON.parse(ev.data);
                         if (ev.event === 'state') set({ state: data });
                         else if (ev.event === 'watches') set({ watches: data });
@@ -128,13 +144,16 @@ export const useBotStore = create<BotStore>((set, get) => {
                             });
                         }
                     } catch (err) {
-                        console.error(`Error parsing ${ev.event} event`, err);
+                        console.error(`Error parsing ${ev.event} event`, err, ev.data);
                     }
                 },
                 (err) => {
-                    console.error("SSE Error:", err);
-                    set({ sseConnected: false });
-                    startPolling();
+                    // Only start polling if not aborted
+                    if (err.name !== 'AbortError') {
+                        set({ sseConnected: false });
+                        startPolling();
+                    }
+                    isConnecting = false;
                 }
             );
         },
@@ -152,8 +171,6 @@ export const useBotStore = create<BotStore>((set, get) => {
         setAccessDenied: (denied, reason) => set({ accessDenied: denied, accessDeniedReason: reason }),
 
         fetchState: async () => {
-            const { accessDenied } = get();
-            if (accessDenied) return;
             try {
                 const data = await apiGet<AppState>('/v1/state');
                 set({ state: data });
@@ -163,8 +180,6 @@ export const useBotStore = create<BotStore>((set, get) => {
         },
 
         fetchWatches: async () => {
-            const { accessDenied } = get();
-            if (accessDenied) return;
             try {
                 const data = await apiGet<Watch[]>('/v1/watches');
                 set({ watches: data });

@@ -42,25 +42,40 @@ export interface Trade {
     timestamp: string;
 }
 
+export interface Balance {
+    asset: string;
+    free: number;
+    locked: number;
+    value_usdt?: number;
+}
+
 export interface PortfolioState {
     equity_usdt: number;
-    balance_available: number;
-    pnl_total_usdt: number;
-    pnl_realized_usdt: number;
-    pnl_unrealized_usdt: number;
-    total_return_percent: number;
-    win_rate: number;
-    profit_factor: number;
-    max_drawdown: number;
-    open_positions_count: number;
+    balances: Balance[];
+    last_sync_at: string | null;
+    account_type: 'SPOT' | 'FUTURES';
+    balance_available?: number;
+    pnl_total_usdt?: number;
+    pnl_realized_usdt?: number;
+    pnl_unrealized_usdt?: number;
+    total_return_percent?: number;
+    win_rate?: number;
+    profit_factor?: number;
+    max_drawdown?: number;
+    open_positions_count?: number;
 }
 
 export interface AppState {
     connected: boolean;
-    latency: number;
+    last_sync_at: string | null;
+    price?: number;
+    symbol?: string;
+    latency_ms?: number;
+    latency?: number;
     mode: 'PAPER' | 'LIVE';
-    notifications: number;
-    active_symbol: string;
+    equity_usdt?: number;
+    notifications?: number;
+    active_symbol?: string;
 }
 
 export interface BotSettings {

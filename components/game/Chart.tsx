@@ -34,10 +34,11 @@ export function GameChart({ candles, currentIndex, position }: GameChartProps) {
             high: c.h,
             low: c.l,
             close: c.c,
-            displayTime: new Date(c.t).toLocaleDateString('tr-TR', {
+            displayTime: new Date(c.t).toLocaleString('tr-TR', {
                 month: 'short',
                 day: 'numeric',
-                hour: '2-digit'
+                hour: '2-digit',
+                minute: '2-digit'
             }),
         }));
     }, [candles, currentIndex]);

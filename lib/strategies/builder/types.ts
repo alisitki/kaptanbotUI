@@ -1,0 +1,157 @@
+
+import { Node, Edge } from 'reactflow';
+
+export type StrategyTimeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+
+// Data types for connection validation
+export type DataType = 'Event' | 'Series' | 'Scalar' | 'Boolean' | 'Config';
+
+// Get output data type for a node type
+export function getNodeOutputType(nodeType: BuilderNodeType, subType?: string): DataType {
+    switch (nodeType) {
+        case 'TRIGGER':
+            return 'Event';
+        case 'CANDLE_SOURCE':
+        case 'INDICATOR':
+            return 'Series';
+        case 'VALUE':
+            return 'Scalar';
+        case 'CONDITION':
+        case 'LOGIC':
+            return 'Boolean';
+        case 'ACTION':
+        case 'RISK':
+            return 'Config';
+        default:
+            return 'Series';
+    }
+}
+
+// Get expected input types for a node's handles
+export function getHandleInputType(nodeType: BuilderNodeType, handleId: string): DataType[] {
+    switch (nodeType) {
+        case 'INDICATOR':
+            return ['Series']; // Only Series input (from Candle Source)
+        case 'CONDITION':
+            return ['Series', 'Scalar']; // Compare can take both
+        case 'LOGIC':
+            return ['Boolean']; // AND/OR needs boolean inputs
+        case 'ACTION':
+            return ['Boolean']; // Boolean gate only (Model B)
+        case 'RISK':
+            return ['Config'];
+        case 'CANDLE_SOURCE':
+            return ['Event']; // Event input from Trigger (Model B)
+        case 'VALUE':
+            return []; // No inputs
+        case 'TRIGGER':
+            return []; // No inputs
+        default:
+            return ['Series', 'Scalar', 'Boolean', 'Event'];
+    }
+}
+
+// Check if a connection is valid based on types
+export function isConnectionValid(
+    sourceType: BuilderNodeType,
+    sourceSubType: string | undefined,
+    targetType: BuilderNodeType,
+    targetSubType: string | undefined,
+    targetHandle: string | undefined
+): { valid: boolean; reason?: string } {
+    const outputType = getNodeOutputType(sourceType, sourceSubType);
+    const acceptedTypes = getHandleInputType(targetType, targetHandle || 'in');
+
+    // 1. Terminal nodes (no outputs)
+    if (sourceType === 'ACTION') {
+        return { valid: false, reason: 'Actions are terminal nodes' };
+    }
+    if (sourceType === 'RISK') {
+        return { valid: false, reason: 'Risk nodes are terminal' };
+    }
+
+    // 2. Model B: Trigger can ONLY connect to CandleSource
+    if (sourceType === 'TRIGGER' && targetType !== 'CANDLE_SOURCE') {
+        return { valid: false, reason: 'Trigger must connect to Candle Source' };
+    }
+
+    // 3. Model B: CandleSource(Series) can ONLY connect to Indicator
+    if (sourceType === 'CANDLE_SOURCE' && targetType !== 'INDICATOR') {
+        return { valid: false, reason: 'Candle Source must connect to Indicator' };
+    }
+
+    // 4. Indicator -> Indicator blocked
+    if (sourceType === 'INDICATOR' && targetType === 'INDICATOR') {
+        return { valid: false, reason: 'Indicator → Indicator not allowed' };
+    }
+
+    // 5. Boolean -> Series input blocked
+    if (outputType === 'Boolean' && acceptedTypes.includes('Series') && !acceptedTypes.includes('Boolean')) {
+        return { valid: false, reason: 'Boolean cannot connect to Series input' };
+    }
+
+    // 6. CrossOver requires Series inputs only
+    if (targetType === 'CONDITION' && targetSubType === 'CROSSOVER') {
+        if (outputType !== 'Series') {
+            return { valid: false, reason: 'CrossOver requires Series input' };
+        }
+    }
+
+    // 7. Action trigger requires Boolean
+    if (targetType === 'ACTION') {
+        if (outputType !== 'Boolean') {
+            return { valid: false, reason: 'Action requires Boolean input' };
+        }
+    }
+
+    // 8. General type compatibility
+    if (!acceptedTypes.includes(outputType)) {
+        return { valid: false, reason: `${outputType} cannot connect to ${targetType}` };
+    }
+
+    return { valid: true };
+}
+
+export interface StrategyMeta {
+    name: string;
+    description?: string;
+    timeframe: StrategyTimeframe;
+    symbol: string;
+}
+
+export type BuilderNodeType =
+    | 'TRIGGER'
+    | 'CANDLE_SOURCE'
+    | 'INDICATOR'
+    | 'CONDITION'
+    | 'LOGIC'
+    | 'VALUE'
+    | 'ACTION'
+    | 'RISK';
+
+export interface StrategyNodeData {
+    label: string;
+    type: BuilderNodeType;
+    subType?: string; // e.g. 'EMA', 'RSI', 'CROSSOVER'
+    params: Record<string, any>;
+    isCore?: boolean; // Cannot be deleted
+    // Validation status
+    isValid?: boolean;
+    error?: string;
+}
+
+export type StrategyNode = Node<StrategyNodeData>;
+export type StrategyEdge = Edge;
+
+export interface StrategyValidationResult {
+    valid: boolean;
+    errors: { nodeId?: string; message: string }[];
+}
+
+export interface SavedStrategy {
+    version: string;
+    meta: StrategyMeta;
+    nodes: StrategyNode[];
+    edges: StrategyEdge[];
+    updatedAt: number;
+}

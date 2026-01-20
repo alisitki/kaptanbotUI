@@ -33,7 +33,7 @@ A premium, dark-themed control panel for a hedge trading bot, built with Next.js
     ```
 
 3.  **Open Application**:
-    Navigate to [http://localhost:3000](http://localhost:3000)
+    Navigate to [http://localhost:3001](http://localhost:3001)
 
 ## Project Structure
 

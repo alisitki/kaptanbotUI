@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { apiPost } from "@/lib/api/api";
 import { useBotStore } from "@/lib/store";
 import {
     LayoutDashboard,
@@ -13,26 +14,38 @@ import {
     History,
     Settings,
     LogOut,
+    Shield,
+    GitBranch,
 } from "lucide-react";
 
 export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
-    const { stop } = useBotStore();
+    const { stop, checkAuth } = useBotStore();
 
-    const handleLogout = () => {
-        localStorage.removeItem('tbv1_token');
-        stop();
-        router.replace('/tradingbotv1'); // Will trigger login screen which will show Token Gate
+    const handleLogout = async () => {
+        try {
+            await apiPost('/auth/logout', {});
+            stop();
+            await checkAuth(); // Refresh state
+            router.replace('/tradingbotv1/login');
+        } catch (error) {
+            console.error("Logout failed", error);
+            // Even if it fails, try to clear local state
+            stop();
+            router.replace('/tradingbotv1/login');
+        }
     };
 
     const navItems = [
         { name: "Overview", href: "/tradingbotv1/overview", icon: LayoutDashboard },
+        { name: "Strategy Builder", href: "/tradingbotv1/strategies/builder", icon: GitBranch },
         { name: "Signals", href: "/tradingbotv1/signals", icon: Radio },
         { name: "Watch", href: "/tradingbotv1/watch", icon: ScanEye },
         { name: "Portfolio", href: "/tradingbotv1/portfolio", icon: PieChart },
         { name: "Trades", href: "/tradingbotv1/trades", icon: History },
         { name: "Settings", href: "/tradingbotv1/settings", icon: Settings },
+        { name: "Admin", href: "/tradingbotv1/admin", icon: Shield },
     ];
 
     return (

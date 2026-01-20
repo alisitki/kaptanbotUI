@@ -3,84 +3,65 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { getToken } from "@/lib/api/runtime";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Sidebar } from "@/components/tradingbotv1/layout/Sidebar";
 import { Topbar } from "@/components/tradingbotv1/layout/Topbar";
 import { useBotStore } from "@/lib/store";
 
 export default function TradingBotLayout({ children }: { children: React.ReactNode }) {
-    const [authorized, setAuthorized] = useState(false);
-    const [tokenInput, setTokenInput] = useState("");
+    const [mounted, setMounted] = useState(false);
     const router = useRouter();
     const pathname = usePathname();
-    const { start, stop, accessDenied, accessDeniedReason } = useBotStore();
+
+    const { start, stop, checkAuth, user, hasBinanceKeys, initialized } = useBotStore();
 
     useEffect(() => {
-        // Check token on mount and path change
-        const token = getToken();
-        if (token) {
-            setAuthorized(true);
-            start();
-        } else {
-            setAuthorized(false);
-            stop();
-        }
-    }, [pathname]);
+        setMounted(true);
+    }, []);
 
-    const handleSaveToken = () => {
-        if (tokenInput.trim().length > 0) {
-            localStorage.setItem('tbv1_token', tokenInput.trim());
-            setAuthorized(true);
-            start();
-            router.refresh(); // Refund state
-        }
-    };
+    useEffect(() => {
+        if (!mounted) return;
 
-    if (!authorized) {
+        const initAuth = async () => {
+            const auth = await checkAuth();
+            const isLoginPage = pathname.includes('/login');
+            const isOnboardingPage = pathname.includes('/onboarding');
+
+            if (!auth) {
+                // Not logged in
+                if (!isLoginPage) {
+                    router.replace('/tradingbotv1/login');
+                }
+                stop();
+            } else {
+                // Logged in
+                if (!auth.has_binance_keys && !isOnboardingPage && !isLoginPage) {
+                    router.replace('/tradingbotv1/onboarding');
+                } else if (auth.has_binance_keys && (isLoginPage || isOnboardingPage)) {
+                    router.replace('/tradingbotv1/overview');
+                }
+                start();
+            }
+        };
+
+        initAuth();
+    }, [mounted, pathname, checkAuth, start, stop, router]);
+
+    if (!mounted || !initialized) {
         return (
-            <div className="min-h-screen bg-[#020202] flex items-center justify-center p-4">
-                <Card className="w-full max-w-md bg-zinc-900 border-white/10">
-                    <CardHeader>
-                        <CardTitle className="text-white">Admin Access</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div>
-                            <Input
-                                type="password"
-                                placeholder="Access Token"
-                                value={tokenInput}
-                                onChange={(e) => setTokenInput(e.target.value)}
-                                className="bg-black/50 border-white/10 text-white"
-                            />
-                        </div>
-                        <Button onClick={handleSaveToken} className="w-full bg-indigo-600 hover:bg-indigo-500">
-                            Enter
-                        </Button>
-                    </CardContent>
-                </Card>
-            </div>
-        );
-    }
-
-    // Access Denied / IP Blocked Screen
-    if (accessDenied && accessDeniedReason === 'IP_NOT_ALLOWED') {
-        return (
-            <div className="min-h-screen bg-[#020202] flex items-center justify-center p-4 text-center">
-                <div className="max-w-md space-y-4">
-                    <h1 className="text-3xl font-bold text-red-500">Access Denied</h1>
-                    <p className="text-zinc-400">Your IP address is not allowed to access this resource. Please check your VPN or Allowlist settings.</p>
-                    <Button variant="outline" onClick={() => window.location.reload()} className="bg-white/5 border-white/10 text-white">
-                        Retry
-                    </Button>
+            <div className="min-h-screen bg-[#020202] flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="h-10 w-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-zinc-500 text-sm font-medium">Verifying session...</span>
                 </div>
             </div>
         );
     }
-    // If TOKEN_INVALID, loop above (authorized=false usually handles it if we clear token, but store state might persist)
-    // Actually, if we clear token, useEffect will run and setAuthorized(false).
+
+    const isAuthPage = pathname.includes('/login') || pathname.includes('/onboarding');
+
+    if (isAuthPage) {
+        return <>{children}</>;
+    }
 
     return (
         <div className="flex h-screen w-full bg-[#020202] dark font-sans antialiased text-white selection:bg-indigo-500/30 overflow-hidden">

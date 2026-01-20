@@ -31,6 +31,8 @@ import {
     computeUnrealized,
     calculateEquity,
     computeStats,
+    updateCurrentCandle,
+    appendNewCandle,
 } from "@/lib/game/engine";
 import { saveSession, generateSessionId } from "@/lib/game/storage";
 import { EffectsLayer } from "@/components/game/EffectsLayer";
@@ -38,6 +40,13 @@ import { useGameSound } from "@/lib/game/sfx";
 import { triggerEffect } from "@/lib/game/effects";
 import { GameBackground } from "@/components/game/GameBackground";
 import { SettingsModal, GamePreferences } from "@/components/game/SettingsModal";
+
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
+
+import { useBinanceStream } from "@/hooks/useBinanceStream";
+import { Candle } from "@/lib/game/types";
 
 // =============================================================================
 // MAIN COMPONENT
@@ -70,55 +79,110 @@ function PlayGameContent() {
     const processingLock = useRef(false);
 
     // =============================================================================
+    // REALTIME UPDATES
+    // =============================================================================
+
+    // Game Config (including interval)
+    const [interval, setInterval] = useState<string>('1h');
+
+    // Callback for websocket updates (throttled)
+    const handleStreamUpdate = useCallback((candleData: Partial<Candle>) => {
+        setGameState(current => {
+            if (!current || current.isEnded || current.mode !== 'realtime') return current;
+            return { ...updateCurrentCandle(current, candleData), config };
+        });
+    }, [config]); // Config is needed for liquidation checks in update
+
+    // Callback for candle close
+    const handleStreamClose = useCallback((candle: Candle) => {
+        setGameState(current => {
+            if (!current || current.isEnded || current.mode !== 'realtime') return current;
+            return { ...appendNewCandle(current, candle), config };
+        });
+    }, [config]);
+
+    // Initialize Websocket Hook
+    useBinanceStream({
+        symbol: 'BTCUSDT',
+        interval: interval,
+        enabled: gameState?.mode === 'realtime' && !gameState.isEnded,
+        onUpdate: handleStreamUpdate,
+        onClose: handleStreamClose,
+    });
+
+    // =============================================================================
     // DATA LOADING
     // =============================================================================
 
-    const loadGame = useCallback(async (startTime?: number, mode: 'random' | 'date' = 'random') => {
+    const loadGame = useCallback(async (startTime?: number, mode: 'random' | 'date' | 'realtime' = 'random', targetInterval: string = interval) => {
         try {
             setIsLoading(true);
             setLoadError(null);
             setShowEndModal(false);
 
-            const params = new URLSearchParams({
-                symbol: 'BTCUSDT',
-                interval: '1h',
-                mode,
-            });
+            let candles: Candle[] = [];
+            let gameStartTime = startTime;
+            let symbol = 'BTCUSDT';
 
-            if (startTime) {
-                params.set('startTime', startTime.toString());
+            // Should use the target interval
+            const activeInterval = targetInterval;
+
+            if (mode === 'realtime') {
+                // Fetch initial data from Proxy (add timestamp to prevent caching)
+                const res = await fetch(`/api/proxy/binance/klines?symbol=${symbol}&interval=${activeInterval}&limit=100&_t=${Date.now()}`);
+                if (!res.ok) throw new Error('Proxy error');
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+
+                candles = data.candles;
+                gameStartTime = candles[0].t;
+            } else {
+                // Determine API endpoint
+                const params = new URLSearchParams({
+                    symbol,
+                    interval: activeInterval,
+                    mode,
+                });
+
+                if (startTime) {
+                    params.set('startTime', startTime.toString());
+                }
+
+                const res = await fetch(`/api/game/start?${params}`);
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || 'Veri yüklenemedi');
+                }
+
+                const response = data as GameStartResponse;
+                candles = response.candles;
+                gameStartTime = response.startTime;
             }
 
-            const res = await fetch(`/api/game/start?${params}`);
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.error || 'Veri yüklenemedi');
-            }
-
-            const response = data as GameStartResponse;
-
-            if (!response.candles || response.candles.length < 50) {
+            if (!candles || candles.length < 50) {
                 throw new Error('Yetersiz veri');
             }
 
             // Create initial game state
             const initialState = createInitialState(
-                response.candles,
-                response.mode,
-                response.startTime,
+                candles,
+                mode,
+                gameStartTime || Date.now(),
                 config,
-                response.symbol,
-                response.interval
+                symbol,
+                activeInterval
             );
 
             setGameState(initialState);
             toast.success("Oyun Başladı", {
-                description: mode === 'random' ? "Rastgele tarih yüklendi" : "Seçilen tarih yüklendi",
+                description: mode === 'realtime'
+                    ? `Canlı piyasa (${activeInterval}) yüklendi`
+                    : (mode === 'random' ? "Rastgele tarih yüklendi" : "Seçilen tarih yüklendi"),
             });
 
         } catch (error) {
-            console.error('Game load error:', error);
+            console.error('Game load load error:', error);
             setLoadError(error instanceof Error ? error.message : 'Bilinmeyen hata');
             toast.error("Yükleme Hatası", {
                 description: error instanceof Error ? error.message : 'Veri yüklenemedi',
@@ -126,18 +190,36 @@ function PlayGameContent() {
         } finally {
             setIsLoading(false);
         }
-    }, [config]);
+    }, [config, interval]);
 
-    // Initial load
+    // Initial load ref to prevent double-loading and re-triggering upon interval changes
+    const hasInitialized = useRef(false);
+
     useEffect(() => {
+        if (hasInitialized.current) return;
+
         const startTime = searchParams.get('startTime');
-        const mode = searchParams.get('mode') as 'random' | 'date';
+        const mode = searchParams.get('mode') as 'random' | 'date' | 'realtime';
 
         loadGame(
             startTime ? parseInt(startTime) : undefined,
-            mode || 'random'
+            mode || 'random',
+            '1h' // Initial default
         );
+
+        hasInitialized.current = true;
     }, [searchParams, loadGame]);
+
+    const handleIntervalChange = useCallback((newInterval: string) => {
+        if (isLoading) return; // Prevent spamming while loading
+
+        setInterval(newInterval);
+
+        if (gameState) {
+            // Pass the new interval explicitly to bypass state lag
+            loadGame(undefined, gameState.mode, newInterval);
+        }
+    }, [gameState, loadGame, isLoading]);
 
     // =============================================================================
     // GAME END HANDLER (defined first since executeAction depends on it)
@@ -237,6 +319,14 @@ function PlayGameContent() {
 
     const handleNext = useCallback(() => {
         if (!gameState) return;
+        // In Realtime mode, "Next" might be disabled or just acts as a skip? 
+        // For now, let's keep it but it moves the manual cursor if checking history, 
+        // effectively nextCandle works on 'currentIndex', which is auto-updated by WS.
+        // However, if we want to prevent manual skip in realtime:
+        if (gameState.mode === 'realtime') {
+            toast.info("Canlı moddasınız", { description: "Mumlar otomatik ilerler." });
+            return;
+        }
         executeAction(() => nextCandle(gameState));
     }, [gameState, executeAction]);
 
@@ -358,6 +448,8 @@ function PlayGameContent() {
                     currentIndex={gameState.currentIndex}
                     mode={gameState.mode}
                     streak={streak}
+                    interval={interval}
+                    onIntervalChange={handleIntervalChange}
                     onSettingsOpen={() => setShowSettingsModal(true)}
                 />
 

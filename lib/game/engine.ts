@@ -429,7 +429,7 @@ export function computeStats(
 
 export function createInitialState(
     candles: Candle[],
-    mode: 'random' | 'date',
+    mode: 'random' | 'date' | 'realtime',
     startTime: number,
     config: GameConfig,
     symbol: string = 'BTCUSDT',
@@ -454,4 +454,64 @@ export function createInitialState(
         isEnded: false,
         endReason: null,
     };
+}
+
+// =============================================================================
+// REALTIME UPDATES
+// =============================================================================
+
+/**
+ * Update the current candle with live data (price tick)
+ * Updates High/Low/Close and triggers liquidation check
+ */
+export function updateCurrentCandle(state: GameState, candleData: Partial<Candle>): GameState {
+    if (state.isEnded) return state;
+
+    const currentCandle = state.candles[state.currentIndex];
+
+    const updatedCandle: Candle = {
+        ...currentCandle,
+        c: candleData.c ?? currentCandle.c,
+        h: Math.max(currentCandle.h, candleData.c ?? 0, candleData.h ?? 0),
+        l: Math.min(currentCandle.l, candleData.c ?? Infinity, candleData.l ?? Infinity),
+        v: (currentCandle.v || 0) + (candleData.v || 0), // Accumulate volume if provided
+    };
+
+    const newCandles = [...state.candles];
+    newCandles[state.currentIndex] = updatedCandle;
+
+    const newState = {
+        ...state,
+        candles: newCandles,
+    };
+
+    // Check liquidation with new price
+    return checkLiquidation(newState);
+}
+
+/**
+ * Append a newly closed candle and advance index
+ */
+export function appendNewCandle(state: GameState, newCandle: Candle): GameState {
+    if (state.isEnded) return state;
+
+    // Optional: Limit total candles to prevent memory issues in long sessions
+    const MAX_BUFFER = 2000;
+    let newCandles = [...state.candles, newCandle];
+
+    if (newCandles.length > MAX_BUFFER) {
+        newCandles = newCandles.slice(newCandles.length - MAX_BUFFER);
+    }
+
+    // Since we appended, the new currentIndex is the last index
+    const newIndex = newCandles.length - 1;
+
+    const newState = {
+        ...state,
+        candles: newCandles,
+        currentIndex: newIndex,
+    };
+
+    // Check liquidation at open of new candle
+    return checkLiquidation(newState);
 }

@@ -1,35 +1,16 @@
 
 import { http, ApiError } from './client/http';
-import { getBaseUrl, getToken, getAuthMethod } from './runtime';
+import { getBaseUrl } from './runtime';
 
 const getHeaders = () => {
-    const token = getToken();
-    const method = getAuthMethod();
-    const headers: Record<string, string> = {
+    return {
         'Content-Type': 'application/json',
     };
-
-    if (token) {
-        if (method === 'BEARER') {
-            headers['Authorization'] = `Bearer ${token}`;
-        } else if (method === 'API_KEY') {
-            headers['x-api-key'] = token;
-        }
-    }
-    return headers;
 };
 
 const getUrl = (path: string) => {
     const baseUrl = getBaseUrl();
-    const token = getToken();
-    const method = getAuthMethod();
-
-    let url = `${baseUrl}${path}`;
-    if (token && method === 'QUERY') {
-        const separator = url.includes('?') ? '&' : '?';
-        url = `${url}${separator}token=${encodeURIComponent(token)}`;
-    }
-    return url;
+    return `${baseUrl}${path}`;
 };
 
 export async function apiGet<T>(path: string): Promise<T> {

@@ -291,11 +291,12 @@ export function TradePanel({
 
                     <Button
                         onClick={onNext}
-                        disabled={isProcessing || isEnded}
+                        disabled={isProcessing || isEnded || gameState.mode === 'realtime'}
                         variant="outline"
                         className="w-full border-white/10 hover:bg-white/5 text-zinc-300 disabled:opacity-50 h-10"
                     >
-                        <Play className="mr-2 h-4 w-4" /> Sonraki Mum
+                        <Play className="mr-2 h-4 w-4" />
+                        {gameState.mode === 'realtime' ? 'Otomatik İlerliyor' : 'Sonraki Mum'}
                     </Button>
                 </TooltipProvider>
 

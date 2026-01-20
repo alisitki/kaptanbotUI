@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import { useEffect, useState } from "react";
 
 interface MetricCardProps {
     title: string;
@@ -27,6 +28,12 @@ export function MetricCard({
     subtext,
     chartData
 }: MetricCardProps) {
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        const timer = setTimeout(() => setMounted(true), 50);
+        return () => clearTimeout(timer);
+    }, []);
+
     if (loading) {
         return (
             <Card className="p-5 border-white/5 bg-[#0A0A0A]/50 backdrop-blur-sm h-32 flex flex-col justify-between">
@@ -43,9 +50,9 @@ export function MetricCard({
         <Card className="relative overflow-hidden p-5 border-white/5 bg-[#0A0A0A]/50 hover:bg-[#0A0A0A]/80 transition-colors backdrop-blur-sm group">
 
             {/* Background Sparkline (Absolute) */}
-            {chartData && (
-                <div className="absolute bottom-0 left-0 right-0 h-16 opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none">
-                    <ResponsiveContainer width="100%" height="100%">
+            {chartData && mounted && (
+                <div className="absolute bottom-0 left-0 right-0 h-16 opacity-10 group-hover:opacity-20 transition-all pointer-events-none overflow-hidden">
+                    <ResponsiveContainer width="100%" height={64}>
                         <AreaChart data={chartData}>
                             <defs>
                                 <linearGradient id={`grad-${title}`} x1="0" y1="0" x2="0" y2="1">

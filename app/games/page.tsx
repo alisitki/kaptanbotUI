@@ -110,6 +110,14 @@ export default function GamesPage() {
                                             Rastgele Başla
                                         </Button>
 
+                                        <Button
+                                            onClick={() => router.push('/games/play?mode=realtime')}
+                                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold"
+                                        >
+                                            <Flame className="w-4 h-4 mr-2" />
+                                            Canlı Piyasa
+                                        </Button>
+
                                         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                                             <DialogTrigger asChild>
                                                 <Button variant="outline" className="border-white/10 hover:bg-white/5 text-white">
@@ -183,10 +191,12 @@ export default function GamesPage() {
                                                         variant="outline"
                                                         className={`text-[10px] ${session.mode === 'random'
                                                             ? 'border-indigo-500/30 text-indigo-400'
-                                                            : 'border-emerald-500/30 text-emerald-400'
+                                                            : session.mode === 'realtime'
+                                                                ? 'border-amber-500/30 text-amber-400'
+                                                                : 'border-emerald-500/30 text-emerald-400'
                                                             }`}
                                                     >
-                                                        {session.mode === 'random' ? 'Rastgele' : 'Tarih'}
+                                                        {session.mode === 'random' ? 'Rastgele' : session.mode === 'realtime' ? 'Canlı' : 'Tarih'}
                                                     </Badge>
                                                     {session.liquidated && (
                                                         <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4 bg-rose-500/10 text-rose-500 border-rose-500/20">

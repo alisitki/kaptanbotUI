@@ -95,7 +95,7 @@ export interface GameState {
     config: GameConfig;
 
     // Meta
-    mode: 'random' | 'date';
+    mode: 'random' | 'date' | 'realtime';
     startTime: number;
     symbol: string;
     interval: string;
@@ -112,7 +112,7 @@ export interface SessionSummary {
     id: string;
     startDate: string;      // ISO date
     endDate: string;        // ISO date
-    mode: 'random' | 'date';
+    mode: 'random' | 'date' | 'realtime';
     pnl: number;
     returnPct: number;
     maxDrawdown: number;
@@ -151,7 +151,7 @@ export interface SessionStats {
 export interface GameStartResponse {
     symbol: string;
     interval: string;
-    mode: 'random' | 'date';
+    mode: 'random' | 'date' | 'realtime';
     startTime: number;
     candles: Candle[];
 }
