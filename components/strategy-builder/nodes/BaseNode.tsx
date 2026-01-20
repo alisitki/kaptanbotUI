@@ -25,8 +25,9 @@ export const BaseNode = memo(({
     icon,
     headerColorClass = "bg-zinc-800",
     inputs = [],
-    outputs = []
-}: BaseNodeProps) => {
+    outputs = [],
+    glowClass = "shadow-indigo-500/40" // Default glow
+}: BaseNodeProps & { glowClass?: string }) => {
     const setSelectedNode = useBuilderStore((s) => s.setSelectedNode);
     const errorNodeIds = useBuilderStore((s) => s.errorNodeIds);
     const warningNodeIds = useBuilderStore((s) => s.warningNodeIds);
@@ -37,12 +38,19 @@ export const BaseNode = memo(({
     return (
         <Card
             className={cn(
-                "w-64 border-2 transition-all shadow-md bg-[#0A0A0A]",
-                hasError ? "border-rose-500 shadow-rose-500/30" :
-                    hasWarning ? "border-amber-500 shadow-amber-500/20" :
-                        selected ? "border-indigo-500 shadow-indigo-500/20" :
-                            "border-zinc-800 hover:border-zinc-700"
+                "w-64 border-2 transition-all duration-300 bg-[#0A0A0A]",
+                // Error/Warning States
+                hasError ? "border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.3)]" :
+                    hasWarning ? "border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.2)]" :
+                        // Normal States
+                        selected
+                            ? cn("border-white/50 shadow-2xl", glowClass) // Selected: Big colored shadow (glowClass sets color)
+                            : cn("border-zinc-800 shadow-lg hover:border-zinc-600", glowClass) // Idle: Smaller colored shadow
             )}
+            style={selected
+                ? { boxShadow: `0 0 40px -5px var(--tw-shadow-color), 0 0 10px -2px var(--tw-shadow-color)` } // Manual intense glow boost
+                : { boxShadow: `0 0 15px -3px var(--tw-shadow-color)` } // Idle subtle glow
+            }
             onClick={(e) => {
                 e.stopPropagation(); // Prevent canvas click
                 setSelectedNode(id);
@@ -58,55 +66,59 @@ export const BaseNode = memo(({
                 <span className="text-sm font-medium text-white truncate flex-1 md:text-xs lg:text-sm">
                     {label}
                 </span>
-            </div>
+            </div >
 
             {/* Body */}
-            <div className="p-3 relative">
+            < div className="p-3 relative" >
                 {/* Input Handles (Left) */}
-                <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-center gap-4 -ml-3 z-10">
-                    {inputs.map((input, index) => (
-                        <div key={input.id} className="relative group">
-                            <Handle
-                                type="target"
-                                position={Position.Left}
-                                id={input.id}
-                                className="w-3 h-3 border-2 border-[#0A0A0A] !bg-zinc-500 hover:!bg-indigo-400 transition-colors"
-                            />
-                            {input.label && (
-                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 px-1 rounded whitespace-nowrap pointer-events-none">
-                                    {input.label}
-                                </span>
-                            )}
-                        </div>
-                    ))}
-                </div>
+                < div className="absolute left-0 top-0 bottom-0 flex flex-col justify-center gap-4 -ml-3 z-10" >
+                    {
+                        inputs.map((input, index) => (
+                            <div key={input.id} className="relative group">
+                                <Handle
+                                    type="target"
+                                    position={Position.Left}
+                                    id={input.id}
+                                    className="w-3 h-3 border-2 border-[#0A0A0A] !bg-zinc-500 hover:!bg-indigo-400 transition-colors"
+                                />
+                                {input.label && (
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 px-1 rounded whitespace-nowrap pointer-events-none">
+                                        {input.label}
+                                    </span>
+                                )}
+                            </div>
+                        ))
+                    }
+                </div >
 
                 {/* Content */}
-                <div className="text-xs text-zinc-400 min-h-[20px]">
+                < div className="text-xs text-zinc-400 min-h-[20px]" >
                     {children}
-                </div>
+                </div >
 
                 {/* Output Handles (Right) */}
-                <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center gap-4 -mr-3 z-10">
-                    {outputs.map((output, index) => (
-                        <div key={output.id} className="relative group">
-                            <Handle
-                                type="source"
-                                position={Position.Right}
-                                id={output.id}
-                                className="w-3 h-3 border-2 border-[#0A0A0A] !bg-zinc-500 hover:!bg-indigo-400 transition-colors"
-                                isConnectable={true}
-                            />
-                            {output.label && (
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 px-1 rounded whitespace-nowrap pointer-events-none">
-                                    {output.label}
-                                </span>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </Card>
+                < div className="absolute right-0 top-0 bottom-0 flex flex-col justify-center gap-4 -mr-3 z-10" >
+                    {
+                        outputs.map((output, index) => (
+                            <div key={output.id} className="relative group">
+                                <Handle
+                                    type="source"
+                                    position={Position.Right}
+                                    id={output.id}
+                                    className="w-3 h-3 border-2 border-[#0A0A0A] !bg-zinc-500 hover:!bg-indigo-400 transition-colors"
+                                    isConnectable={true}
+                                />
+                                {output.label && (
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity bg-black/90 px-1 rounded whitespace-nowrap pointer-events-none">
+                                        {output.label}
+                                    </span>
+                                )}
+                            </div>
+                        ))
+                    }
+                </div >
+            </div >
+        </Card >
     );
 });
 

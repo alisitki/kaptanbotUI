@@ -13,6 +13,7 @@ export const HedgeNode = memo(({ id, selected, data }: NodeProps) => {
             label={data.label || "Min Hedge"}
             selected={selected}
             headerColorClass="bg-cyan-500/10 border-cyan-500/20 text-cyan-400"
+            glowClass="shadow-cyan-500/40"
             icon={<Shield className="h-3 w-3 text-cyan-400" />}
             inputs={[]}
             outputs={[]}

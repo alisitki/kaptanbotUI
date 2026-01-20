@@ -21,6 +21,7 @@ export const ConditionNode = memo(({ id, selected, data }: NodeProps) => {
             headerColorClass={isPriceCondition
                 ? "bg-purple-500/10 border-purple-500/20 text-purple-400"
                 : "bg-amber-500/10 border-amber-500/20 text-amber-400"}
+            glowClass={isPriceCondition ? "shadow-purple-500/40" : "shadow-amber-500/40"}
             icon={isPriceCondition
                 ? <Target className="h-3 w-3 text-purple-400" />
                 : <GitCompare className="h-3 w-3 text-amber-400" />}

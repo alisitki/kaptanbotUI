@@ -49,6 +49,51 @@ export function Inspector() {
 
             <div className="p-4 space-y-6 flex-1 overflow-y-auto">
 
+                {/* TRIGGER INFO */}
+                {type === 'TRIGGER' && (
+                    <div className="space-y-3">
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                            <h4 className="text-emerald-400 font-semibold text-sm mb-2">🎯 Trigger Node</h4>
+                            <p className="text-xs text-zinc-400 leading-relaxed">
+                                Bu node stratejinin <strong className="text-emerald-300">başlangıç noktasıdır</strong>. Her mum kapanışında (bar close) otomatik olarak tetiklenir ve sinyal akışını başlatır.
+                            </p>
+                        </div>
+                        <div className="bg-zinc-900/50 rounded-lg p-3 space-y-2">
+                            <div className="text-[10px] text-zinc-500 uppercase font-bold">Çıktı</div>
+                            <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-mono">EVENT</span>
+                                <span className="text-xs text-zinc-400">→ CandleSource'a bağlanır</span>
+                            </div>
+                        </div>
+                        <div className="text-[10px] text-zinc-600 italic">
+                            💡 Trigger → CandleSource bağlantısı zorunludur.
+                        </div>
+                    </div>
+                )}
+
+                {/* CANDLE SOURCE INFO */}
+                {type === 'CANDLE_SOURCE' && (
+                    <div className="space-y-3">
+                        <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-3">
+                            <h4 className="text-indigo-400 font-semibold text-sm mb-2">📊 Candle Source</h4>
+                            <p className="text-xs text-zinc-400 leading-relaxed">
+                                Bu node mum verilerini sağlar. <strong className="text-indigo-300">Close, High, Low, Open</strong> fiyat serilerini indikatörlere besler.
+                            </p>
+                        </div>
+                        <div className="bg-zinc-900/50 rounded-lg p-3 space-y-2">
+                            <div className="text-[10px] text-zinc-500 uppercase font-bold">Girdi / Çıktı</div>
+                            <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-mono">EVENT</span>
+                                <span className="text-zinc-500">→</span>
+                                <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 text-[10px] font-mono">SERIES</span>
+                            </div>
+                        </div>
+                        <div className="text-[10px] text-zinc-600 italic">
+                            💡 Çıktısını EMA, RSI gibi indikatörlere bağlayın.
+                        </div>
+                    </div>
+                )}
+
                 {/* INDICATORS CONFIG */}
                 {type === 'INDICATOR' && (
                     <div className="space-y-4">

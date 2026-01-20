@@ -11,6 +11,7 @@ export const IndicatorNode = memo(({ id, selected, data }: NodeProps) => {
             label={data.label || "Indicator"}
             selected={selected}
             headerColorClass="bg-blue-500/10 border-blue-500/20 text-blue-400"
+            glowClass="shadow-blue-500/40"
             icon={<Activity className="h-3 w-3 text-blue-400" />}
             inputs={[{ id: "in", label: "Source" }]}
             outputs={[{ id: "out", label: "Value" }]}

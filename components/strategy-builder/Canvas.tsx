@@ -135,7 +135,7 @@ function BuilderCanvas() {
                 snapGrid={[15, 15]}
                 defaultEdgeOptions={{
                     animated: true,
-                    style: { stroke: '#6366f1', strokeWidth: 2 },
+                    style: { stroke: '#6366f1', strokeWidth: 2, filter: 'drop-shadow(0 0 3px #6366f1aa)' },
                 }}
             >
                 <Background color="#FFFFFF" gap={20} size={1} style={{ opacity: 0.05 }} />

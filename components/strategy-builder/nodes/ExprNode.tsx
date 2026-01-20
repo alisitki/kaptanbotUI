@@ -14,6 +14,7 @@ export const ExprNode = memo(({ id, selected, data }: NodeProps) => {
             label={data.label || "Expression"}
             selected={selected}
             headerColorClass="bg-fuchsia-500/10 border-fuchsia-500/20 text-fuchsia-400"
+            glowClass="shadow-fuchsia-500/40"
             icon={<Code className="h-3 w-3 text-fuchsia-400" />}
             inputs={[{ id: "series", label: "Price" }]}
             outputs={[{ id: "out", label: "Bool" }]}

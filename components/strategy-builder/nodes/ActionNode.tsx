@@ -17,6 +17,10 @@ export const ActionNode = memo(({ id, selected, data }: NodeProps) => {
             ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
             : "bg-zinc-500/10 border-zinc-500/20 text-zinc-400";
 
+    const glowClass = isLong || isSetLong ? "shadow-emerald-500/40"
+        : isShort || isSetShort ? "shadow-rose-500/40"
+            : "shadow-zinc-500/40";
+
     const Icon = isSetLong ? TrendingUp : isSetShort ? TrendingDown : Rocket;
 
     return (
@@ -25,6 +29,7 @@ export const ActionNode = memo(({ id, selected, data }: NodeProps) => {
             label={data.label || "Action"}
             selected={selected}
             headerColorClass={colorClass}
+            glowClass={glowClass}
             icon={<Icon className="h-3 w-3" />}
             inputs={[{ id: "trigger", label: "Execute" }]}
             outputs={[]} // Actions are terminal

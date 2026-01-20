@@ -173,20 +173,40 @@ export function BlockLibrary() {
                                 <div key={cat.name}>
                                     <div className="text-[10px] uppercase text-zinc-500 font-bold mb-2 px-1">{cat.name}</div>
                                     <div className="grid gap-1">
-                                        {cat.items.map((block, i) => (
-                                            <button
-                                                key={i}
-                                                onClick={() => handleBlockClick(block)}
-                                                className="flex items-center gap-2 p-2 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-indigo-500/10 hover:border-indigo-500/20 text-left group transition-all"
-                                            >
-                                                <block.icon className="h-4 w-4 text-zinc-500 group-hover:text-indigo-400 flex-shrink-0" />
-                                                <div className="min-w-0">
-                                                    <div className="text-xs font-medium text-zinc-300 group-hover:text-white truncate">
-                                                        {block.label}
+                                        {cat.items.map((block, i) => {
+                                            let glowHover = "hover:bg-indigo-500/10 hover:border-indigo-500/30 hover:shadow-[0_0_10px_rgba(99,102,241,0.2)]"; // Default
+                                            const t = block.type;
+                                            const sub = block.subType;
+
+                                            if (t === 'ACTION') glowHover = "hover:bg-rose-500/10 hover:border-rose-500/30 hover:shadow-[0_0_10px_rgba(244,63,94,0.2)] group-hover:text-rose-400";
+                                            if (t === 'TRIGGER') glowHover = "hover:bg-emerald-500/10 hover:border-emerald-500/30 hover:shadow-[0_0_10px_rgba(16,185,129,0.2)]";
+                                            if (t === 'CONDITION') {
+                                                if (sub?.includes('PRICE')) glowHover = "hover:bg-purple-500/10 hover:border-purple-500/30 hover:shadow-[0_0_10px_rgba(168,85,247,0.2)]";
+                                                else glowHover = "hover:bg-amber-500/10 hover:border-amber-500/30 hover:shadow-[0_0_10px_rgba(245,158,11,0.2)]";
+                                            }
+                                            if (t === 'INDICATOR') glowHover = "hover:bg-blue-500/10 hover:border-blue-500/30 hover:shadow-[0_0_10px_rgba(59,130,246,0.2)]";
+                                            if (t === 'LOGIC') {
+                                                if (sub === 'AND') glowHover = "hover:bg-cyan-500/10 hover:border-cyan-500/30 hover:shadow-[0_0_10px_rgba(6,182,212,0.2)]";
+                                                else glowHover = "hover:bg-orange-500/10 hover:border-orange-500/30 hover:shadow-[0_0_10px_rgba(249,115,22,0.2)]";
+                                            }
+                                            if (t === 'GUARD') glowHover = "hover:bg-orange-500/10 hover:border-orange-500/30 hover:shadow-[0_0_10px_rgba(249,115,22,0.2)]";
+                                            if (t === 'EXPR') glowHover = "hover:bg-fuchsia-500/10 hover:border-fuchsia-500/30 hover:shadow-[0_0_10px_rgba(217,70,239,0.2)]";
+
+                                            return (
+                                                <button
+                                                    key={i}
+                                                    onClick={() => handleBlockClick(block)}
+                                                    className={`flex items-center gap-2 p-2 rounded-lg border border-white/5 bg-white/[0.02] transition-all text-left group ${glowHover}`}
+                                                >
+                                                    <block.icon className={`h-4 w-4 text-zinc-500 flex-shrink-0 transition-colors ${t === 'ACTION' ? 'group-hover:text-rose-400' : 'group-hover:text-white'}`} />
+                                                    <div className="min-w-0">
+                                                        <div className="text-xs font-medium text-zinc-300 group-hover:text-white truncate">
+                                                            {block.label}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </button>
-                                        ))}
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             ))}

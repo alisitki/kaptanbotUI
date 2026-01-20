@@ -6,6 +6,7 @@ import { GitMerge } from "lucide-react";
 
 export const LogicNode = memo(({ id, selected, data }: NodeProps) => {
     const isAnd = data.subType === 'AND';
+    const glowClass = isAnd ? "shadow-cyan-500/40" : "shadow-orange-500/40";
 
     return (
         <BaseNode
@@ -13,6 +14,7 @@ export const LogicNode = memo(({ id, selected, data }: NodeProps) => {
             label={data.label || "Logic"}
             selected={selected}
             headerColorClass="bg-cyan-500/10 border-cyan-500/20 text-cyan-400"
+            glowClass={glowClass}
             icon={<GitMerge className="h-3 w-3 text-cyan-400" />}
             inputs={[{ id: "a", label: "A" }, { id: "b", label: "B" }]}
             outputs={[{ id: "out", label: "Result" }]}
@@ -22,8 +24,8 @@ export const LogicNode = memo(({ id, selected, data }: NodeProps) => {
                     LOGIC GATE
                 </span>
                 <div className={`font-mono text-lg font-bold py-1 rounded ${isAnd
-                        ? 'text-cyan-400 bg-cyan-500/10'
-                        : 'text-orange-400 bg-orange-500/10'
+                    ? 'text-cyan-400 bg-cyan-500/10'
+                    : 'text-orange-400 bg-orange-500/10'
                     }`}>
                     {data.subType || "AND"}
                 </div>

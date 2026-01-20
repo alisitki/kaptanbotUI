@@ -14,6 +14,7 @@ export const GuardNode = memo(({ id, selected, data }: NodeProps) => {
             label={data.label || "Guard"}
             selected={selected}
             headerColorClass="bg-orange-500/10 border-orange-500/20 text-orange-400"
+            glowClass="shadow-orange-500/40"
             icon={isCooldown ? <Timer className="h-3 w-3 text-orange-400" /> : <Zap className="h-3 w-3 text-orange-400" />}
             inputs={[]}
             outputs={[]}
