@@ -128,42 +128,8 @@ function BuilderCanvas() {
         setSelectedNodes(selectedNodes.map(n => n.id));
     }, [setSelectedNodes]);
 
-    // Lane Logic: Snapping and Boundaries
-    const { getLaneForNodeType } = require("@/lib/strategies/builder/types");
+    // Lane Logic: Access to store actions
     const openLibrary = useBuilderStore(s => s.openLibrary);
-    const updateNodeData = useBuilderStore(s => s.updateNodeData);
-
-    const onNodeDragStop = useCallback((_: any, node: any) => {
-        const lane = getLaneForNodeType(node.data.type);
-        const y = node.position.y;
-
-        let targetY = y;
-        let outOfBounds = false;
-
-        if (lane === 'SIGNAL') {
-            if (y > 280) { targetY = 140; outOfBounds = true; }
-            else if (y < 0) { targetY = 140; outOfBounds = true; }
-        } else if (lane === 'ORDER') {
-            if (y < 280 || y > 480) { targetY = 380; outOfBounds = true; }
-        } else if (lane === 'RISK') {
-            if (y < 480) { targetY = 580; outOfBounds = true; }
-        }
-
-        if (outOfBounds) {
-            toast.warning(`${node.data.label} kendi kulvarına (Lane) geri çekildi.`, {
-                description: `Bu düğme ${lane} alanında kalmalıdır.`,
-                duration: 2000
-            });
-
-            // We need to update the node position in the store
-            // ReactFlow handles its own state, but we need to sync it to our store
-            onNodesChange([{
-                id: node.id,
-                type: 'position',
-                position: { x: node.position.x, y: targetY }
-            }]);
-        }
-    }, [getLaneForNodeType, onNodesChange]);
 
     return (
         <div className="h-full w-full bg-[#020202] text-white relative">
@@ -177,7 +143,6 @@ function BuilderCanvas() {
                 onNodeClick={onNodeClick}
                 onPaneClick={onPaneClick}
                 onSelectionChange={onSelectionChange}
-                onNodeDragStop={onNodeDragStop}
                 selectionMode={SelectionMode.Partial}
                 panOnDrag={true}
                 fitView
