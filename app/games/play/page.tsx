@@ -183,9 +183,16 @@ function PlayGameContent() {
 
         } catch (error) {
             console.error('Game load load error:', error);
-            setLoadError(error instanceof Error ? error.message : 'Bilinmeyen hata');
+            const errorMessage = error instanceof Error ? error.message : 'Bilinmeyen hata';
+            setLoadError(errorMessage);
+
+            let description = "Binance API ile bağlantı kurulamadı.";
+            if (errorMessage.includes('Proxy error') || errorMessage.includes('500')) {
+                description = "Vercel proxy bağlantısı başarısız oldu. Lütfen internetinizi kontrol edin veya tekrar deneyin.";
+            }
+
             toast.error("Yükleme Hatası", {
-                description: error instanceof Error ? error.message : 'Veri yüklenemedi',
+                description,
             });
         } finally {
             setIsLoading(false);

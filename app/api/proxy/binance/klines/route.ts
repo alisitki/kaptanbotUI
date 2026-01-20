@@ -1,7 +1,50 @@
-
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
+
+const BINANCE_ENDPOINTS = [
+    'https://api.binance.com',
+    'https://api1.binance.com',
+    'https://api2.binance.com',
+    'https://api3.binance.com',
+    'https://data-api.binance.vision'
+];
+
+async function fetchFromBinance(symbol: string, interval: string, limit: string) {
+    let lastError: any = null;
+
+    for (const endpoint of BINANCE_ENDPOINTS) {
+        try {
+            const url = `${endpoint}/api/v3/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
+            console.log(`Attempting binance fetch: ${url}`);
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
+            const response = await fetch(url, {
+                signal: controller.signal,
+                next: { revalidate: 0 } // No cache
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.warn(`Binance Endpoint ${endpoint} failed: ${response.status} ${errorText}`);
+                lastError = new Error(`Binance API Error: ${response.status}`);
+                continue;
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error(`Fetch error for ${endpoint}:`, error);
+            lastError = error;
+            continue;
+        }
+    }
+
+    throw lastError || new Error('All Binance endpoints failed');
+}
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
@@ -17,16 +60,7 @@ export async function GET(request: Request) {
     }
 
     try {
-        const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
-
-        const response = await fetch(binanceUrl);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Binance API Error: ${response.status} ${errorText}`);
-        }
-
-        const data = await response.json();
+        const data = await fetchFromBinance(symbol, interval, limit);
 
         // Transform [timestamp, open, high, low, close, volume, ...] to Candle object
         const candles = data.map((d: any) => ({
@@ -41,7 +75,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ candles });
 
     } catch (error) {
-        console.error('Proxy Error:', error);
+        console.error('Final Proxy Error:', error);
         return NextResponse.json(
             { error: error instanceof Error ? error.message : 'Failed to fetch from Binance' },
             { status: 500 }

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { apiPost } from "@/lib/api/api";
 import { useBotStore } from "@/lib/store";
+import { toast } from "sonner";
 import {
     LayoutDashboard,
     Radio,
@@ -14,14 +15,16 @@ import {
     History,
     Settings,
     LogOut,
+    LogIn,
     Shield,
     GitBranch,
+    Gamepad2,
 } from "lucide-react";
 
 export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
-    const { logout } = useBotStore();
+    const { logout, user } = useBotStore();
 
     const handleLogout = async () => {
         await logout();
@@ -37,6 +40,7 @@ export function Sidebar() {
         { name: "Trades", href: "/tradingbotv1/trades", icon: History },
         { name: "Settings", href: "/tradingbotv1/settings", icon: Settings },
         { name: "Admin", href: "/tradingbotv1/admin", icon: Shield },
+        { name: "Trading Dojo", href: "/games", icon: Gamepad2, guest: true },
     ];
 
     return (
@@ -54,18 +58,27 @@ export function Sidebar() {
             {/* Navigation */}
             <nav className="flex w-full flex-col gap-2 px-4 flex-1">
                 {navItems.map((item) => {
-                    // Check if current path starts with item.href (for active state handling)
-                    // But usually exact match or start with for nested routes
+                    const isProtected = !item.guest && !user;
                     const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+
                     return (
                         <Link
                             key={item.href}
-                            href={item.href}
+                            href={isProtected ? '#' : item.href}
+                            onClick={(e) => {
+                                if (isProtected) {
+                                    e.preventDefault();
+                                    toast.error("Giriş Gerekli", {
+                                        description: "Bu özelliği kullanmak için giriş yapmalısınız."
+                                    });
+                                }
+                            }}
                             className={cn(
                                 "flex h-10 w-full items-center rounded-lg px-3 transition-colors duration-200",
                                 isActive
                                     ? "bg-white/10 text-white shadow-sm"
-                                    : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                                    : "text-zinc-500 hover:bg-white/5 hover:text-zinc-300",
+                                isProtected && "opacity-50 cursor-not-allowed grayscale"
                             )}
                         >
                             <item.icon className={cn("h-5 w-5 shrink-0", isActive && "text-indigo-400")} />
@@ -83,15 +96,27 @@ export function Sidebar() {
             {/* Bottom Actions */}
             <div className="flex w-full flex-col gap-2 px-4">
                 <div className="h-px w-full bg-white/5 mx-auto" />
-                <button
-                    onClick={handleLogout}
-                    className="flex h-10 w-full items-center rounded-lg px-3 text-red-500/70 transition-colors duration-200 hover:bg-red-500/10 hover:text-red-500"
-                >
-                    <LogOut className="h-5 w-5 shrink-0" />
-                    <span className="ml-3 text-sm font-medium">
-                        Logout
-                    </span>
-                </button>
+                {user ? (
+                    <button
+                        onClick={handleLogout}
+                        className="flex h-10 w-full items-center rounded-lg px-3 text-red-500/70 transition-colors duration-200 hover:bg-red-500/10 hover:text-red-500"
+                    >
+                        <LogOut className="h-5 w-5 shrink-0" />
+                        <span className="ml-3 text-sm font-medium">
+                            Logout
+                        </span>
+                    </button>
+                ) : (
+                    <Link
+                        href="/tradingbotv1/login"
+                        className="flex h-10 w-full items-center rounded-lg px-3 text-emerald-500/70 transition-colors duration-200 hover:bg-emerald-500/10 hover:text-emerald-500"
+                    >
+                        <LogIn className="h-5 w-5 shrink-0" />
+                        <span className="ml-3 text-sm font-medium">
+                            Login
+                        </span>
+                    </Link>
+                )}
             </div>
         </div>
     );
