@@ -14,10 +14,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 }
 
 async function handleRequest(req: NextRequest, pathArr: string[], method: string) {
-    const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://157.180.19.240:3000';
+    const backendUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.nobetix.com').replace(/\/$/, '');
     const path = pathArr.join('/');
     const searchParams = req.nextUrl.searchParams.toString();
     const targetUrl = `${backendUrl}/${path}${searchParams ? '?' + searchParams : ''}`;
+
+    console.log(`📡 [Proxy] ${method} -> ${targetUrl}`);
 
     const headers = new Headers();
     // Forward essential headers
