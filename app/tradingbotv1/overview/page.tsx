@@ -82,10 +82,10 @@ export default function OverviewPage() {
                 />
                 <MetricCard
                     title="Total PnL"
-                    value={portfolio ? `$${portfolio.pnl_total_usdt.toLocaleString()}` : "..."}
+                    value={portfolio ? `$${(portfolio.pnl_total_usdt ?? 0).toLocaleString()}` : "..."}
                     loading={!portfolio}
                     subtext="Cumulative Profit"
-                    positive={portfolio ? portfolio.pnl_total_usdt >= 0 : undefined}
+                    positive={portfolio ? (portfolio.pnl_total_usdt ?? 0) >= 0 : undefined}
                 />
                 <MetricCard
                     title="Active Watches"
