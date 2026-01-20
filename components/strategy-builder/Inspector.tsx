@@ -94,6 +94,205 @@ export function Inspector() {
                     </div>
                 )}
 
+                {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+                {/* 🍳 RECIPE BUILDER PACKAGE NODE INSPECTORS */}
+                {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+
+                {/* ENTRY ORDER CONFIG */}
+                {type === 'ENTRY_ORDER' && (
+                    <div className="space-y-4">
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                            <h4 className="text-emerald-400 font-semibold text-sm mb-1">📥 Entry Order</h4>
+                            <p className="text-[10px] text-zinc-500">Signal true olunca bu order tetiklenir.</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Side</Label>
+                            <Select value={params.side || 'LONG'} onValueChange={(v) => handleParamChange('side', v)}>
+                                <SelectTrigger className="bg-zinc-900 border-zinc-800">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="LONG">🟢 LONG</SelectItem>
+                                    <SelectItem value="SHORT">🔴 SHORT</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Order Type</Label>
+                            <Select value={params.orderType || 'MARKET'} onValueChange={(v) => handleParamChange('orderType', v)}>
+                                <SelectTrigger className="bg-zinc-900 border-zinc-800">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="MARKET">Market</SelectItem>
+                                    <SelectItem value="LIMIT">Limit</SelectItem>
+                                    <SelectItem value="STOP">Stop</SelectItem>
+                                    <SelectItem value="STOP_LIMIT">Stop-Limit</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Quantity ({params.qty || 100}%)</Label>
+                            <Slider
+                                value={[params.qty || 100]}
+                                min={1}
+                                max={100}
+                                step={1}
+                                onValueChange={(val) => handleParamChange('qty', val[0])}
+                            />
+                        </div>
+
+                        {(params.orderType === 'LIMIT' || params.orderType === 'STOP_LIMIT') && (
+                            <div className="space-y-2">
+                                <Label className="text-xs text-zinc-400">Limit Price</Label>
+                                <Input
+                                    type="number"
+                                    value={params.limitPrice || ''}
+                                    onChange={(e) => handleParamChange('limitPrice', parseFloat(e.target.value) || null)}
+                                    className="bg-zinc-900 border-zinc-800"
+                                    placeholder="e.g. 95000"
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* EXIT MANAGER CONFIG */}
+                {type === 'EXIT_MANAGER' && (
+                    <div className="space-y-4">
+                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                            <h4 className="text-amber-400 font-semibold text-sm mb-1">🚪 Exit Manager</h4>
+                            <p className="text-[10px] text-zinc-500">SL/TP/Trailing/Break-Even ayarları.</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Stop Loss ({params.stopLossPct || 0}%)</Label>
+                            <Slider
+                                value={[params.stopLossPct || 2]}
+                                min={0.5}
+                                max={20}
+                                step={0.5}
+                                onValueChange={(val) => handleParamChange('stopLossPct', val[0])}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Take Profit ({params.takeProfitPct || 0}%)</Label>
+                            <Slider
+                                value={[params.takeProfitPct || 4]}
+                                min={0.5}
+                                max={50}
+                                step={0.5}
+                                onValueChange={(val) => handleParamChange('takeProfitPct', val[0])}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Trailing Stop ({params.trailingStopPct || 0}%)</Label>
+                            <Slider
+                                value={[params.trailingStopPct || 0]}
+                                min={0}
+                                max={10}
+                                step={0.1}
+                                onValueChange={(val) => handleParamChange('trailingStopPct', val[0] || null)}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Break-Even @ Profit ({params.breakEvenAtProfitPct || 0}%)</Label>
+                            <Slider
+                                value={[params.breakEvenAtProfitPct || 0]}
+                                min={0}
+                                max={10}
+                                step={0.1}
+                                onValueChange={(val) => handleParamChange('breakEvenAtProfitPct', val[0] || null)}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* POSITION POLICY CONFIG */}
+                {type === 'POSITION_POLICY' && (
+                    <div className="space-y-4">
+                        <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3">
+                            <h4 className="text-purple-400 font-semibold text-sm mb-1">📋 Position Policy</h4>
+                            <p className="text-[10px] text-zinc-500">Mevcut pozisyon varsa ne yapılacak?</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">If Position Exists</Label>
+                            <Select value={params.ifPositionExists || 'IGNORE'} onValueChange={(v) => handleParamChange('ifPositionExists', v)}>
+                                <SelectTrigger className="bg-zinc-900 border-zinc-800">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="IGNORE">🚫 IGNORE - Sinyal atla</SelectItem>
+                                    <SelectItem value="ADD">➕ ADD - Pozisyona ekle</SelectItem>
+                                    <SelectItem value="FLIP">🔄 FLIP - Ters pozisyona geç</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <div className="flex items-center justify-between bg-white/5 rounded-lg p-3">
+                            <div>
+                                <Label className="text-xs text-zinc-300">Cancel Open Orders</Label>
+                                <p className="text-[9px] text-zinc-500">Yeni sinyalde açık emirleri iptal et</p>
+                            </div>
+                            <Switch
+                                checked={params.cancelOpenOrders || false}
+                                onCheckedChange={(v) => handleParamChange('cancelOpenOrders', v)}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* DAILY GUARDS CONFIG */}
+                {type === 'DAILY_GUARDS' && (
+                    <div className="space-y-4">
+                        <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg p-3">
+                            <h4 className="text-rose-400 font-semibold text-sm mb-1">🛡️ Daily Guards</h4>
+                            <p className="text-[10px] text-zinc-500">Günlük risk limitleri ve korumalar.</p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Max Daily Loss ({params.maxDailyLossPct || 0}%)</Label>
+                            <Slider
+                                value={[params.maxDailyLossPct || 5]}
+                                min={1}
+                                max={25}
+                                step={0.5}
+                                onValueChange={(val) => handleParamChange('maxDailyLossPct', val[0])}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs text-zinc-400">Max Trades Per Day</Label>
+                            <Input
+                                type="number"
+                                value={params.maxTradesPerDay || 10}
+                                onChange={(e) => handleParamChange('maxTradesPerDay', parseInt(e.target.value) || 10)}
+                                className="bg-zinc-900 border-zinc-800"
+                                min={1}
+                                max={100}
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between bg-rose-500/10 rounded-lg p-3">
+                            <div>
+                                <Label className="text-xs text-rose-300">Kill Switch</Label>
+                                <p className="text-[9px] text-zinc-500">Aktifse tüm trading durur</p>
+                            </div>
+                            <Switch
+                                checked={params.killSwitch || false}
+                                onCheckedChange={(v) => handleParamChange('killSwitch', v)}
+                            />
+                        </div>
+                    </div>
+                )}
+
                 {/* INDICATORS CONFIG */}
                 {type === 'INDICATOR' && (
                     <div className="space-y-4">

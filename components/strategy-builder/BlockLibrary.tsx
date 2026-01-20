@@ -80,6 +80,54 @@ const BLOCKS: BlockDef[] = [
     { type: 'HEDGE', label: 'Min Hedge', subType: 'MIN_HEDGE', icon: Shield, defaultParams: { minLongUnits: 0, minShortUnits: 0 }, description: 'Minimum hedge limitleri. Her zaman tutulacak minimum birimler.', inputs: [], outputs: [], example: 'Min 3 Long, 2 Short' },
     { type: 'GUARD', label: 'Cooldown Bars', subType: 'COOLDOWN_BARS', icon: Timer, defaultParams: { bars: 5 }, description: 'Action tetiklendikten sonra N bar bekleme süresi. Spam önler.', inputs: [], outputs: [], example: 'Wait 5 bars after trigger' },
     { type: 'GUARD', label: 'Once Per Cross', subType: 'ONCE_PER_CROSS', icon: Zap, defaultParams: {}, description: 'Her cross anında sadece bir kez tetikle. Tekrar önler.', inputs: [], outputs: [], example: 'Fire only on cross moment' },
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🍳 RECIPE BUILDER PACKAGE NODES
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    {
+        type: 'ENTRY_ORDER',
+        label: 'Entry Order',
+        subType: 'ENTRY',
+        icon: Rocket,
+        defaultParams: { side: 'LONG', orderType: 'MARKET', qty: 100, limitPrice: null, stopPrice: null },
+        description: 'Tek node ile order tipi, yön ve miktar. Signal → Entry bağlantısı ile tetiklenir.',
+        inputs: ['Boolean'],
+        outputs: ['OrderIntent'],
+        example: 'Signal true → LONG MARKET %100'
+    },
+    {
+        type: 'EXIT_MANAGER',
+        label: 'Exit Manager',
+        subType: 'EXIT',
+        icon: Target,
+        defaultParams: { stopLossPct: 2, takeProfitPct: 4, trailingStopPct: null, breakEvenAtProfitPct: null, partialTPs: [] },
+        description: 'SL, TP, Trailing Stop ve Break-Even tek node\'da. Entry Order\'dan sonra bağlanır.',
+        inputs: ['OrderIntent'],
+        outputs: ['ExitPolicy'],
+        example: 'SL: -2%, TP: +4%, Trailing: 1.5%'
+    },
+    {
+        type: 'POSITION_POLICY',
+        label: 'Position Policy',
+        subType: 'POLICY',
+        icon: Shield,
+        defaultParams: { ifPositionExists: 'IGNORE', cancelOpenOrders: false },
+        description: 'Mevcut pozisyon varsa ne yapılacağını belirler: Ignore, Add veya Flip.',
+        inputs: ['OrderIntent'],
+        outputs: ['OrderIntent'],
+        example: 'If position exists → IGNORE'
+    },
+    {
+        type: 'DAILY_GUARDS',
+        label: 'Daily Guards',
+        subType: 'GUARDS',
+        icon: ShieldAlert,
+        defaultParams: { maxDailyLossPct: 5, maxTradesPerDay: 10, killSwitch: false },
+        description: 'Günlük zarar limiti, maksimum trade sayısı ve kill switch.',
+        inputs: ['OrderIntent'],
+        outputs: ['OrderIntent'],
+        example: 'Max -5% daily, max 10 trades'
+    },
 ];
 
 export function BlockLibrary() {
@@ -111,7 +159,12 @@ export function BlockLibrary() {
                                         block.type === 'CANDLE_SOURCE' ? 'candleSourceNode' :
                                             block.type === 'HEDGE' ? 'hedgeNode' :
                                                 block.type === 'GUARD' ? 'guardNode' :
-                                                    block.type === 'EXPR' ? 'exprNode' : 'default',
+                                                    block.type === 'EXPR' ? 'exprNode' :
+                                                        // Recipe Builder nodes
+                                                        block.type === 'ENTRY_ORDER' ? 'entryOrderNode' :
+                                                            block.type === 'EXIT_MANAGER' ? 'exitManagerNode' :
+                                                                block.type === 'POSITION_POLICY' ? 'positionPolicyNode' :
+                                                                    block.type === 'DAILY_GUARDS' ? 'dailyGuardsNode' : 'default',
             position: { x: 100 + Math.random() * 50, y: 100 + Math.random() * 50 },
             data: {
                 label: block.label,
@@ -140,6 +193,7 @@ export function BlockLibrary() {
 
     // Group blocks by category
     const categories = [
+        { name: '🍳 Recipe Blocks', items: filtered.filter(b => ['ENTRY_ORDER', 'EXIT_MANAGER', 'POSITION_POLICY', 'DAILY_GUARDS'].includes(b.type)) },
         { name: 'Logic', items: filtered.filter(b => b.type === 'LOGIC') },
         { name: 'Conditions', items: filtered.filter(b => b.type === 'CONDITION') },
         { name: 'Indicators', items: filtered.filter(b => b.type === 'INDICATOR') },

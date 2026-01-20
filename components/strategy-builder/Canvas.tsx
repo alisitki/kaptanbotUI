@@ -10,6 +10,8 @@ import ReactFlow, {
     SelectionMode
 } from "reactflow";
 import "reactflow/dist/style.css";
+import { toast } from "sonner";
+import { Plus } from "lucide-react";
 
 // Node Types
 import { TriggerNode } from "./nodes/TriggerNode";
@@ -24,6 +26,11 @@ import { HedgeNode } from "./nodes/HedgeNode";
 import { GuardNode } from "./nodes/GuardNode";
 import { ExprNode } from "./nodes/ExprNode";
 import { UnknownNode } from "./nodes/UnknownNode";
+// Recipe Builder Package Nodes
+import { EntryOrderNode } from "./nodes/EntryOrderNode";
+import { ExitManagerNode } from "./nodes/ExitManagerNode";
+import { PositionPolicyNode } from "./nodes/PositionPolicyNode";
+import { DailyGuardsNode } from "./nodes/DailyGuardsNode";
 
 const nodeTypes = {
     triggerNode: TriggerNode,
@@ -38,6 +45,11 @@ const nodeTypes = {
     guardNode: GuardNode,
     exprNode: ExprNode,
     unknownNode: UnknownNode,
+    // Recipe Builder
+    entryOrderNode: EntryOrderNode,
+    exitManagerNode: ExitManagerNode,
+    positionPolicyNode: PositionPolicyNode,
+    dailyGuardsNode: DailyGuardsNode,
 };
 
 function BuilderCanvas() {
@@ -116,8 +128,45 @@ function BuilderCanvas() {
         setSelectedNodes(selectedNodes.map(n => n.id));
     }, [setSelectedNodes]);
 
+    // Lane Logic: Snapping and Boundaries
+    const { getLaneForNodeType } = require("@/lib/strategies/builder/types");
+    const openLibrary = useBuilderStore(s => s.openLibrary);
+    const updateNodeData = useBuilderStore(s => s.updateNodeData);
+
+    const onNodeDragStop = useCallback((_: any, node: any) => {
+        const lane = getLaneForNodeType(node.data.type);
+        const y = node.position.y;
+
+        let targetY = y;
+        let outOfBounds = false;
+
+        if (lane === 'SIGNAL') {
+            if (y > 280) { targetY = 140; outOfBounds = true; }
+            else if (y < 0) { targetY = 140; outOfBounds = true; }
+        } else if (lane === 'ORDER') {
+            if (y < 280 || y > 480) { targetY = 380; outOfBounds = true; }
+        } else if (lane === 'RISK') {
+            if (y < 480) { targetY = 580; outOfBounds = true; }
+        }
+
+        if (outOfBounds) {
+            toast.warning(`${node.data.label} kendi kulvarına (Lane) geri çekildi.`, {
+                description: `Bu düğme ${lane} alanında kalmalıdır.`,
+                duration: 2000
+            });
+
+            // We need to update the node position in the store
+            // ReactFlow handles its own state, but we need to sync it to our store
+            onNodesChange([{
+                id: node.id,
+                type: 'position',
+                position: { x: node.position.x, y: targetY }
+            }]);
+        }
+    }, [getLaneForNodeType, onNodesChange]);
+
     return (
-        <div className="h-full w-full bg-[#020202] text-white">
+        <div className="h-full w-full bg-[#020202] text-white relative">
             <ReactFlow
                 nodes={nodes.map(n => ({ ...n, selected: selectedNodeIds.includes(n.id) }))}
                 edges={edges}
@@ -128,6 +177,7 @@ function BuilderCanvas() {
                 onNodeClick={onNodeClick}
                 onPaneClick={onPaneClick}
                 onSelectionChange={onSelectionChange}
+                onNodeDragStop={onNodeDragStop}
                 selectionMode={SelectionMode.Partial}
                 panOnDrag={true}
                 fitView
@@ -139,6 +189,62 @@ function BuilderCanvas() {
                 }}
             >
                 <Background color="#FFFFFF" gap={20} size={1} style={{ opacity: 0.05 }} />
+
+                {/* Lane Background Bands */}
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                    {/* Signal Band */}
+                    <div className="absolute top-0 left-0 right-0 h-[280px] bg-emerald-500/[0.02] border-b border-emerald-500/5 select-none" />
+                    {/* Order Band */}
+                    <div className="absolute top-[280px] left-0 right-0 h-[200px] bg-indigo-500/[0.02] border-b border-indigo-500/5 select-none" />
+                    {/* Risk Band */}
+                    <div className="absolute top-[480px] left-0 right-0 bottom-0 bg-rose-500/[0.02] select-none" />
+                </div>
+
+                {/* Lane Headers */}
+                <div className="absolute left-6 top-6 z-20 space-y-[210px] pointer-events-none">
+                    {/* Signal Header */}
+                    <div className="flex flex-col gap-1 pointer-events-auto">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-black uppercase tracking-widest text-emerald-400">Signal Lane</span>
+                            <button
+                                onClick={() => openLibrary('Logic')}
+                                className="p-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition-all"
+                            >
+                                <Plus size={12} />
+                            </button>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 max-w-[150px]">Tetikleyiciler, indikatörler ve mantıksal koşullar.</p>
+                    </div>
+
+                    {/* Order Header */}
+                    <div className="flex flex-col gap-1 pointer-events-auto">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-black uppercase tracking-widest text-indigo-400">Order Lane</span>
+                            <button
+                                onClick={() => openLibrary('🍳 Recipe Blocks')}
+                                className="p-1 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 transition-all"
+                            >
+                                <Plus size={12} />
+                            </button>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 max-w-[150px]">Emir tipi, yönü ve pozisyon politikası.</p>
+                    </div>
+
+                    {/* Risk Header */}
+                    <div className="flex flex-col gap-1 pointer-events-auto">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-black uppercase tracking-widest text-rose-400">Risk & Guard Lane</span>
+                            <button
+                                onClick={() => openLibrary('Risk')}
+                                className="p-1 rounded-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all"
+                            >
+                                <Plus size={12} />
+                            </button>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 max-w-[150px]">Günlük limitler, SL/TP ve teknik korumalar.</p>
+                    </div>
+                </div>
+
                 <Controls className="bg-zinc-900 border-zinc-800 fill-white text-white" />
             </ReactFlow>
         </div>

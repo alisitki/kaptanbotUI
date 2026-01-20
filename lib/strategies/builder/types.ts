@@ -3,8 +3,11 @@ import { Node, Edge } from 'reactflow';
 
 export type StrategyTimeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
 
+// Lane types for canvas organization
+export type Lane = 'SIGNAL' | 'ORDER' | 'RISK';
+
 // Data types for connection validation
-export type DataType = 'Event' | 'Series' | 'Scalar' | 'Boolean' | 'Config';
+export type DataType = 'Event' | 'Series' | 'Scalar' | 'Boolean' | 'Config' | 'OrderIntent' | 'ExitPolicy';
 
 // Get output data type for a node type
 export function getNodeOutputType(nodeType: BuilderNodeType, subType?: string): DataType {
@@ -26,6 +29,13 @@ export function getNodeOutputType(nodeType: BuilderNodeType, subType?: string): 
         case 'HEDGE':
         case 'GUARD':
             return 'Config';
+        // NEW PACKAGE NODES
+        case 'ENTRY_ORDER':
+        case 'POSITION_POLICY':
+        case 'DAILY_GUARDS':
+            return 'OrderIntent';
+        case 'EXIT_MANAGER':
+            return 'ExitPolicy';
         default:
             return 'Series';
     }
@@ -58,6 +68,15 @@ export function getHandleInputType(nodeType: BuilderNodeType, handleId: string, 
             return []; // No inputs
         case 'TRIGGER':
             return []; // No inputs
+        // RECIPE BUILDER PACKAGE NODES
+        case 'ENTRY_ORDER':
+            return ['Boolean']; // Boolean gate from signal
+        case 'EXIT_MANAGER':
+            return ['OrderIntent']; // From ENTRY_ORDER
+        case 'POSITION_POLICY':
+            return ['OrderIntent']; // From ENTRY_ORDER
+        case 'DAILY_GUARDS':
+            return ['OrderIntent']; // From POSITION_POLICY or ENTRY_ORDER
         default:
             return ['Series', 'Scalar', 'Boolean', 'Event'];
     }
@@ -148,7 +167,38 @@ export type BuilderNodeType =
     | 'RISK'
     | 'HEDGE'
     | 'GUARD'
-    | 'EXPR';
+    | 'EXPR'
+    // RECIPE BUILDER PACKAGE NODES
+    | 'ENTRY_ORDER'
+    | 'EXIT_MANAGER'
+    | 'POSITION_POLICY'
+    | 'DAILY_GUARDS';
+
+// Get lane for a node type (for auto-placement)
+export function getLaneForNodeType(type: BuilderNodeType): Lane {
+    switch (type) {
+        case 'TRIGGER':
+        case 'CANDLE_SOURCE':
+        case 'INDICATOR':
+        case 'CONDITION':
+        case 'LOGIC':
+        case 'EXPR':
+        case 'VALUE':
+            return 'SIGNAL';
+        case 'ENTRY_ORDER':
+        case 'EXIT_MANAGER':
+        case 'POSITION_POLICY':
+            return 'ORDER';
+        case 'DAILY_GUARDS':
+        case 'GUARD':
+        case 'RISK':
+        case 'HEDGE':
+            return 'RISK';
+        case 'ACTION':
+        default:
+            return 'SIGNAL';
+    }
+}
 
 export interface StrategyNodeData {
     label: string;

@@ -8,7 +8,8 @@ import {
     addEdge,
     applyNodeChanges,
     applyEdgeChanges,
-    MarkerType
+    MarkerType,
+    Position
 } from 'reactflow';
 import { StrategyNode, StrategyEdge, StrategyMeta, SavedStrategy, isConnectionValid } from './types';
 import { persist, createJSONStorage } from 'zustand/middleware';
@@ -58,6 +59,12 @@ interface BuilderState {
 
     // Layout
     autoLayout: () => void;
+
+    // UI State
+    isLibraryOpen: boolean;
+    libraryCategoryFilter: string | null;
+    openLibrary: (category?: string) => void;
+    closeLibrary: () => void;
 
     // Zoom to node
     zoomToNode: (nodeId: string) => void;
@@ -307,10 +314,39 @@ export const useBuilderStore = create<BuilderState>()(
                     }
                 }
 
+                // Recipe Builder singleton checks
+                if (node.data.type === 'DAILY_GUARDS') {
+                    const hasDailyGuards = nodes.some(n => n.data.type === 'DAILY_GUARDS');
+                    if (hasDailyGuards) {
+                        toast.error("Strategy can only have one Daily Guards node.");
+                        return;
+                    }
+                }
+
+                if (node.data.type === 'POSITION_POLICY') {
+                    const hasPositionPolicy = nodes.some(n => n.data.type === 'POSITION_POLICY');
+                    if (hasPositionPolicy) {
+                        toast.error("Strategy can only have one Position Policy node.");
+                        return;
+                    }
+                }
+
                 pushHistory();
 
+                // Lane-based Y positioning for auto-placement
+                const { getLaneForNodeType } = require('./types');
+                const lane = getLaneForNodeType(node.data.type);
+                const laneYBase = lane === 'SIGNAL' ? 100 : lane === 'ORDER' ? 350 : 550;
+                const adjustedNode = {
+                    ...node,
+                    position: {
+                        x: node.position.x,
+                        y: laneYBase + Math.random() * 80
+                    }
+                };
+
                 set((state) => ({
-                    nodes: [...state.nodes, node],
+                    nodes: [...state.nodes, adjustedNode],
                     selectedNodeId: node.id,
                     selectedNodeIds: [node.id],
                     isDirty: true
@@ -391,36 +427,7 @@ export const useBuilderStore = create<BuilderState>()(
                 set({ selectedNodeId: nodeId, selectedNodeIds: [nodeId] });
             },
 
-            autoLayout: () => {
-                const { nodes, edges, pushHistory } = get();
-                if (nodes.length === 0) return;
 
-                pushHistory();
-
-                const g = new dagre.graphlib.Graph();
-                g.setDefaultEdgeLabel(() => ({}));
-                g.setGraph({ rankdir: 'LR', nodesep: 80, ranksep: 120 });
-
-                nodes.forEach(node => {
-                    g.setNode(node.id, { width: 180, height: 100 });
-                });
-
-                edges.forEach(edge => {
-                    g.setEdge(edge.source, edge.target);
-                });
-
-                dagre.layout(g);
-
-                const newNodes = nodes.map(node => {
-                    const pos = g.node(node.id);
-                    return {
-                        ...node,
-                        position: { x: pos.x - 90, y: pos.y - 50 }
-                    };
-                });
-
-                set({ nodes: newNodes, isDirty: true });
-            },
 
             reset: () => set({
                 nodes: DEFAULT_GRAPH.nodes,
@@ -610,6 +617,16 @@ export const useBuilderStore = create<BuilderState>()(
                     }
                 }
 
+                // Recipe Builder: Check Package Nodes connectivity
+                const recipeNodes = nodes.filter(n => ['ENTRY_ORDER', 'EXIT_MANAGER', 'POSITION_POLICY', 'DAILY_GUARDS'].includes(n.data.type));
+                recipeNodes.forEach(node => {
+                    const incoming = edges.filter(e => e.target === node.id);
+                    if (incoming.length === 0) {
+                        errors.push({ nodeId: node.id, message: `[ERROR] '${node.data.label}' is disconnected.`, hint: 'Connect it to the flow.' });
+                        errorNodes.push(node.id);
+                    }
+                });
+
                 // Node Specific Validation
                 nodes.forEach(n => {
                     // Indicator: Check Period
@@ -617,6 +634,7 @@ export const useBuilderStore = create<BuilderState>()(
                         errors.push({ nodeId: n.id, message: `[ERROR] '${n.data.label}' missing 'period'.`, hint: 'Set period parameter in Inspector' });
                         errorNodes.push(n.id);
                     }
+
 
                     // Compare/Crossover: Check Inputs (skip price conditions)
                     if (n.data.type === 'CONDITION' &&
@@ -740,11 +758,70 @@ export const useBuilderStore = create<BuilderState>()(
                 return errorCount === 0;
             },
 
+            // UI State Implementation
+            isLibraryOpen: false,
+            libraryCategoryFilter: null,
+            openLibrary: (category) => set({ isLibraryOpen: true, libraryCategoryFilter: category || null }),
+            closeLibrary: () => set({ isLibraryOpen: false, libraryCategoryFilter: null }),
+
+            // Layout
+            autoLayout: () => {
+                const { nodes, edges, pushHistory } = get();
+                pushHistory();
+
+                const dagreGraph = new dagre.graphlib.Graph();
+                dagreGraph.setGraph({ rankdir: 'LR', align: 'UL', ranksep: 80, nodesep: 30 });
+                dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+                // Define lane boundaries (Y-axis centers)
+                const LANES = {
+                    SIGNAL: { center: 140 },
+                    ORDER: { center: 380 },
+                    RISK: { center: 580 }
+                };
+
+                // Group nodes by lane
+                const { getLaneForNodeType } = require('./types');
+
+                nodes.forEach((node) => {
+                    dagreGraph.setNode(node.id, { width: 176, height: 80 });
+                });
+
+                edges.forEach((edge) => {
+                    dagreGraph.setEdge(edge.source, edge.target);
+                });
+
+                dagre.layout(dagreGraph);
+
+                const newNodes = nodes.map((node) => {
+                    const nodeWithPosition = dagreGraph.node(node.id);
+                    const laneType = getLaneForNodeType(node.data.type);
+
+                    // Keep X from DAGRE (flow order) but FORCE Y based on Lane
+                    let targetY = LANES.SIGNAL.center;
+                    if (laneType === 'ORDER') targetY = LANES.ORDER.center;
+                    if (laneType === 'RISK') targetY = LANES.RISK.center;
+
+                    return {
+                        ...node,
+                        position: {
+                            x: nodeWithPosition.x - 176 / 2 + 50,
+                            y: targetY - 40 // Center node vertically in lane
+                        },
+                        targetPosition: Position.Left,
+                        sourcePosition: Position.Right,
+                    };
+                });
+
+                set({ nodes: newNodes, isDirty: true });
+            },
+
             getStrategyJSON: () => {
                 const { nodes, edges, meta } = get();
 
                 const trigger = nodes.find(n => n.data.type === 'TRIGGER');
                 const risk = nodes.find(n => n.data.type === 'RISK');
+                const hedge = nodes.find(n => n.data.type === 'HEDGE');
                 const cooldown = nodes.find(n => n.data.type === 'GUARD' && n.data.subType === 'COOLDOWN_BARS');
 
                 const riskDefaults = {
@@ -788,28 +865,25 @@ export const useBuilderStore = create<BuilderState>()(
                         slPct: risk.data.params?.slPct ?? riskDefaults.slPct,
                         tpPct: risk.data.params?.tpPct ?? riskDefaults.tpPct
                     } : riskDefaults,
-                    hedge: (() => {
-                        const hedgeNode = nodes.find(n => n.data.type === 'HEDGE');
-                        if (!hedgeNode) return null;
-                        return {
-                            minLongUnits: hedgeNode.data.params?.minLongUnits ?? 0,
-                            minShortUnits: hedgeNode.data.params?.minShortUnits ?? 0
-                        };
-                    })(),
+                    hedge: hedge ? {
+                        minLongUnits: hedge.data.params?.minLongUnits ?? 0,
+                        minShortUnits: hedge.data.params?.minShortUnits ?? 0
+                    } : null,
                     guards: {
-                        cooldownBars: cooldown?.data.params?.bars || null
+                        cooldownBars: cooldown ? (cooldown.data.params?.bars ?? 0) : 0
                     }
                 };
-            }
+            },
+
         }),
         {
-            name: 'kaptanbot-strategy-builder-draft',
+            name: 'strategy-builder-storage',
             storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
                 nodes: state.nodes,
                 edges: state.edges,
                 meta: state.meta
-            })
+            }),
         }
     )
 );
