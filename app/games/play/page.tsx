@@ -63,6 +63,7 @@ function PlayGameContent() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [showEndModal, setShowEndModal] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
+    const [isIntervalLoading, setIsIntervalLoading] = useState(false);
 
     // Preferences
     const [preferences, setPreferences] = useState<GamePreferences>({
@@ -217,16 +218,63 @@ function PlayGameContent() {
         hasInitialized.current = true;
     }, [searchParams, loadGame]);
 
-    const handleIntervalChange = useCallback((newInterval: string) => {
-        if (isLoading) return; // Prevent spamming while loading
+    const handleIntervalChange = useCallback(async (newInterval: string) => {
+        if (isLoading || isIntervalLoading || !gameState) return;
 
+        // Set loading state FIRST - before any async work
+        setIsIntervalLoading(true);
         setInterval(newInterval);
 
-        if (gameState) {
-            // Pass the new interval explicitly to bypass state lag
-            loadGame(undefined, gameState.mode, newInterval);
+        try {
+            // Fetch new candles for the new interval
+            const symbol = gameState.symbol || 'BTCUSDT';
+            let candles: Candle[] = [];
+
+            if (gameState.mode === 'realtime') {
+                const res = await fetch(`/api/proxy/binance/klines?symbol=${symbol}&interval=${newInterval}&limit=100&_t=${Date.now()}`);
+                if (!res.ok) throw new Error('Proxy error');
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                candles = data.candles;
+            } else {
+                // For historical mode, fetch from the same start time
+                const params = new URLSearchParams({
+                    symbol,
+                    interval: newInterval,
+                    mode: gameState.mode,
+                    startTime: gameState.startTime.toString(),
+                });
+                const res = await fetch(`/api/game/start?${params}`);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Veri yüklenemedi');
+                candles = data.candles;
+            }
+
+            if (!candles || candles.length < 50) {
+                throw new Error('Yetersiz veri');
+            }
+
+            // Preserve position, cash, trades - only update candles and interval
+            setGameState(prev => prev ? {
+                ...prev,
+                candles,
+                currentIndex: Math.min(prev.currentIndex, candles.length - 1),
+                interval: newInterval,
+            } : null);
+
+            toast.success(`Interval değiştirildi: ${newInterval}`, {
+                description: gameState.position ? "Pozisyonunuz korundu" : undefined,
+            });
+
+        } catch (error) {
+            console.error('Interval change error:', error);
+            toast.error("Interval değiştirilemedi", {
+                description: error instanceof Error ? error.message : 'Bilinmeyen hata',
+            });
+        } finally {
+            setIsIntervalLoading(false);
         }
-    }, [gameState, loadGame, isLoading]);
+    }, [gameState, isLoading, isIntervalLoading]);
 
     // =============================================================================
     // GAME END HANDLER (defined first since executeAction depends on it)
@@ -474,7 +522,15 @@ function PlayGameContent() {
                     {/* Game Layout */}
                     <div className="flex-1 grid grid-cols-4 gap-4 min-h-0">
                         {/* Chart (3 columns) */}
-                        <div className="col-span-3 h-full">
+                        <div className="col-span-3 h-full relative">
+                            {isIntervalLoading && (
+                                <div className="absolute inset-0 bg-[#0A0A0A]/90 backdrop-blur-sm z-20 flex items-center justify-center rounded-lg">
+                                    <div className="text-center space-y-3">
+                                        <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                                        <p className="text-zinc-400 text-sm">Interval değiştiriliyor...</p>
+                                    </div>
+                                </div>
+                            )}
                             <GameChart
                                 candles={gameState.candles}
                                 currentIndex={gameState.currentIndex}
