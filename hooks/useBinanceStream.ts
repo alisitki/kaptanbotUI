@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useCallback } from 'react';
 import { Candle } from '@/lib/game/types';
 import { toast } from 'sonner';
@@ -11,9 +10,6 @@ interface WebSocketHookProps {
     onClose: (candle: Candle) => void;
 }
 
-// Global variable to track active connection to prevent duplicates
-let activeSocket: WebSocket | null = null;
-
 export function useBinanceStream({
     symbol,
     interval,
@@ -22,26 +18,31 @@ export function useBinanceStream({
     onClose
 }: WebSocketHookProps) {
     const wsRef = useRef<WebSocket | null>(null);
-    const throttleRef = useRef<NodeJS.Timeout | null>(null);
+    const intervalRef = useRef(interval);
+    const enabledRef = useRef(enabled);
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Sync refs
+    useEffect(() => {
+        intervalRef.current = interval;
+        enabledRef.current = enabled;
+    }, [interval, enabled]);
 
     // Accumulate updates within the throttle window
     const pendingUpdate = useRef<{
-        c?: number; // Last Close/Price
-        h?: number; // Max High in window
-        l?: number; // Min Low in window
-        v?: number; // Accumulated Volume in window
+        c?: number;
+        h?: number;
+        l?: number;
+        v?: number;
     }>({});
 
-    // Throttled update flush (100ms for snappier feel)
+    // Throttled update flush (100ms)
     useEffect(() => {
         if (!enabled) return;
 
         const flushUpdates = () => {
             if (Object.keys(pendingUpdate.current).length > 0) {
                 onUpdate({ ...pendingUpdate.current });
-                // Reset pending, but keep tracking if needed? 
-                // Actually reset is fine, next window starts fresh.
-                // Engine handles accumulating V and checking absolute H/L.
                 pendingUpdate.current = {};
             }
         };
@@ -51,57 +52,56 @@ export function useBinanceStream({
     }, [enabled, onUpdate]);
 
     const connect = useCallback(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) return;
-
-        // Clean up any existing global socket just in case
-        if (activeSocket && activeSocket !== wsRef.current) {
-            activeSocket.close();
+        // Clear any pending reconnect
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
         }
 
-        const klineStream = `${symbol.toLowerCase()}@kline_${interval}`;
-        const tradeStream = `${symbol.toLowerCase()}@aggTrade`;
+        if (!enabledRef.current) return;
 
-        // Use Combined Streams
+        // If already connecting or open for the correct interval, skip
+        if (wsRef.current) {
+            if (wsRef.current.readyState === WebSocket.CONNECTING || wsRef.current.readyState === WebSocket.OPEN) {
+                return;
+            }
+        }
+
+        const currentInterval = intervalRef.current;
+        const klineStream = `${symbol.toLowerCase()}@kline_${currentInterval}`;
+        const tradeStream = `${symbol.toLowerCase()}@aggTrade`;
         const url = `wss://stream.binance.com:9443/stream?streams=${klineStream}/${tradeStream}`;
 
-        console.log(`🔌 Connecting to Binance Stream: ${url}`);
+        console.log(`🔌 Connecting to Binance Stream: ${url} (Intent: ${currentInterval})`);
         const ws = new WebSocket(url);
         wsRef.current = ws;
-        activeSocket = ws;
 
         ws.onopen = () => {
-            console.log('✅ Binance Stream Connected');
+            if (ws !== wsRef.current) {
+                ws.close();
+                return;
+            }
+            console.log(`✅ Binance Stream Connected [${currentInterval}]`);
             toast.success("Canlı veri akışı başladı");
         };
 
         ws.onmessage = (event) => {
+            if (ws !== wsRef.current) return;
+
             try {
                 const message = JSON.parse(event.data);
-
-                // Combined stream format: { stream: string, data: any }
                 const stream = message.stream;
                 const data = message.data;
 
-                // Handle Aggregated Trade (Real-time ticks)
                 if (stream.endsWith('@aggTrade')) {
                     const price = parseFloat(data.p);
                     const qty = parseFloat(data.q);
-
-                    // Update pending stats for next flush
                     pendingUpdate.current.c = price;
-
-                    // Track High/Low within this throttle window
                     pendingUpdate.current.h = Math.max(pendingUpdate.current.h ?? price, price);
                     pendingUpdate.current.l = Math.min(pendingUpdate.current.l ?? price, price);
-
-                    // Accumulate volume
                     pendingUpdate.current.v = (pendingUpdate.current.v ?? 0) + qty;
-                }
-
-                // Handle Kline Update (Authoritative candle status)
-                else if (stream.endsWith(`@kline_${interval}`)) {
+                } else if (stream.endsWith(`@kline_${currentInterval}`)) {
                     const k = data.k;
-
                     const klineData: Partial<Candle> = {
                         t: k.t,
                         o: parseFloat(k.o),
@@ -111,34 +111,27 @@ export function useBinanceStream({
                         v: parseFloat(k.v),
                     };
 
-                    // If closed, trigger closing logic immediately
                     if (k.x) {
                         onClose(klineData as Candle);
-                        // Reset pending to avoid double counting or out-of-sync updates
                         pendingUpdate.current = {};
                     } else {
-                        // For open klines, we can strictly sync to what Binance says
-                        // This corrects any drift from our manual aggregation
-                        pendingUpdate.current = {
-                            ...pendingUpdate.current,
-                            ...klineData
-                        };
+                        pendingUpdate.current = { ...pendingUpdate.current, ...klineData };
                     }
                 }
-
             } catch (error) {
                 console.error('WS Parse Error:', error);
             }
         };
 
         ws.onclose = () => {
-            console.log('❌ Binance Stream Closed');
-            if (wsRef.current === ws) wsRef.current = null;
-            if (activeSocket === ws) activeSocket = null;
+            console.log(`❌ Binance Stream Closed [${currentInterval}]`);
 
-            // Reconnect if still enabled
-            if (enabled) {
-                setTimeout(connect, 2000);
+            if (ws === wsRef.current) {
+                wsRef.current = null;
+                // Only reconnect if still enabled AND interval hasn't changed
+                if (enabledRef.current && intervalRef.current === currentInterval) {
+                    reconnectTimeoutRef.current = setTimeout(connect, 3000);
+                }
             }
         };
 
@@ -147,26 +140,22 @@ export function useBinanceStream({
             ws.close();
         };
 
-    }, [symbol, interval, enabled, onClose]);
+    }, [symbol, onClose]); // Minimal fixed dependencies
 
     useEffect(() => {
         if (enabled) {
             connect();
-        } else {
-            if (wsRef.current) {
-                wsRef.current.close();
-                wsRef.current = null;
-            }
         }
 
         return () => {
             if (wsRef.current) {
-                wsRef.current.close();
+                const ws = wsRef.current;
                 wsRef.current = null;
+                ws.close();
             }
-            if (throttleRef.current) {
-                clearTimeout(throttleRef.current);
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
             }
         };
-    }, [enabled, connect]);
+    }, [enabled, interval, connect]);
 }
