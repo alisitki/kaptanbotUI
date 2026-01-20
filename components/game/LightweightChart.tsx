@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import {
     createChart,
     ColorType,
@@ -28,6 +28,9 @@ export default function LightweightChart({ candles, currentIndex, position }: Li
     const entryLineRef = useRef<any>(null);
     const liqLineRef = useRef<any>(null);
 
+    // Laser effect state
+    const [showLasers, setShowLasers] = useState(false);
+
     // Current candle data
     const currentCandle = candles[currentIndex];
     const currentPrice = currentCandle?.c ?? 0;
@@ -39,8 +42,6 @@ export default function LightweightChart({ candles, currentIndex, position }: Li
         // Deduplicate by time
         const uniqueCandles = new Map();
         relevantCandles.forEach(c => {
-            // Ensure unique by time. If duplicate, last one wins (or first? usually overwrite)
-            // casting to Time is important
             uniqueCandles.set(c.t, c);
         });
 
@@ -55,14 +56,16 @@ export default function LightweightChart({ candles, currentIndex, position }: Li
         })) as CandlestickData[];
     }, [candles, currentIndex]);
 
+    // Handle avatar click for laser effect
+    const handleAvatarClick = () => {
+        setShowLasers(true);
+        setTimeout(() => setShowLasers(false), 3000);
+    };
+
     // Initialize Chart
     useEffect(() => {
         if (!chartContainerRef.current) return;
-
-        // Clean up previous chart if any
-        if (chartApiRef.current) {
-            chartApiRef.current.remove();
-        }
+        if (chartApiRef.current) return;
 
         const chart = createChart(chartContainerRef.current, {
             layout: {
@@ -125,8 +128,7 @@ export default function LightweightChart({ candles, currentIndex, position }: Li
         seriesApiRef.current = series;
         series.setData(chartData);
 
-        // Handle resize
-        const handleResize = () => {
+        const resizeHandler = () => {
             if (chartContainerRef.current && chartApiRef.current) {
                 chartApiRef.current.applyOptions({
                     width: chartContainerRef.current.clientWidth,
@@ -135,23 +137,23 @@ export default function LightweightChart({ candles, currentIndex, position }: Li
             }
         };
 
-        window.addEventListener('resize', handleResize);
+        window.addEventListener('resize', resizeHandler);
 
         return () => {
-            window.removeEventListener('resize', handleResize);
+            window.removeEventListener('resize', resizeHandler);
             if (chartApiRef.current) {
                 chartApiRef.current.remove();
                 chartApiRef.current = null;
                 seriesApiRef.current = null;
             }
         };
-    }, []); // Run once on mount
+    }, []);
 
     // Update Data
     useEffect(() => {
         if (!seriesApiRef.current || !chartData.length) return;
         seriesApiRef.current.setData(chartData);
-    }, [chartData]); // Update when data (currentIndex) changes
+    }, [chartData]);
 
     // Update Markers & Lines
     useEffect(() => {
@@ -170,7 +172,7 @@ export default function LightweightChart({ candles, currentIndex, position }: Li
                 price: position.entryPrice,
                 color: position.side === 'LONG' ? '#22c55e' : '#ef4444',
                 lineWidth: 2,
-                lineStyle: 1, // Dotted
+                lineStyle: 1,
                 axisLabelVisible: true,
                 title: 'GİRİŞ',
             });
@@ -185,9 +187,9 @@ export default function LightweightChart({ candles, currentIndex, position }: Li
         if (position) {
             liqLineRef.current = series.createPriceLine({
                 price: position.liqPrice,
-                color: '#f43f5e', // rose-500
+                color: '#f43f5e',
                 lineWidth: 2,
-                lineStyle: 2, // Dashed
+                lineStyle: 2,
                 axisLabelVisible: true,
                 title: 'LİK',
             });
@@ -197,7 +199,7 @@ export default function LightweightChart({ candles, currentIndex, position }: Li
 
     return (
         <div className="relative w-full h-full flex flex-col">
-            {/* Floating Info Header within the chart area */}
+            {/* Floating Info Header */}
             <div className="absolute top-4 left-4 z-10 pointer-events-none select-none">
                 <div className="flex flex-col">
                     <div className="text-xs text-zinc-500 font-medium tracking-wider mb-0.5">BTC/USDT</div>
@@ -212,9 +214,44 @@ export default function LightweightChart({ candles, currentIndex, position }: Li
 
             <div ref={chartContainerRef} className="w-full h-full" />
 
-            {/* Watermark in Chart */}
-            <div className="absolute bottom-4 left-4 pointer-events-none opacity-20 text-[100px] font-black tracking-tighter text-white leading-none hidden md:block">
-                KAPTAN
+            {/* Avatar Watermark with Laser Effect */}
+            <div
+                className="absolute bottom-4 left-20 z-10 cursor-pointer group"
+                onClick={handleAvatarClick}
+            >
+                <div className="relative">
+                    <img
+                        src="/avatar.png"
+                        alt="Avatar"
+                        className={`w-16 h-16 rounded-full border-2 transition-all duration-300 object-cover opacity-30 group-hover:opacity-80 group-hover:scale-110 ${showLasers
+                            ? 'border-red-500 shadow-[0_0_30px_rgba(220,38,38,0.8)] opacity-100 scale-110'
+                            : 'border-white/10'
+                            }`}
+                    />
+
+                    {/* Laser Eyes Effect */}
+                    {showLasers && (
+                        <>
+                            {/* Left Eye */}
+                            <div
+                                className="absolute w-2 h-2 bg-white rounded-full shadow-[0_0_10px_5px_rgba(255,0,0,0.8)] z-20 animate-pulse"
+                                style={{ top: '43%', left: '35%' }}
+                            >
+                                <div className="absolute top-1/2 left-1/2 w-[2000px] h-[20px] bg-red-500/60 -translate-y-1/2 blur-md origin-left animate-laser-scan" />
+                                <div className="absolute top-1/2 left-1/2 w-[2000px] h-[8px] bg-white/80 -translate-y-1/2 blur-sm origin-left animate-laser-scan" />
+                            </div>
+
+                            {/* Right Eye */}
+                            <div
+                                className="absolute w-2 h-2 bg-white rounded-full shadow-[0_0_10px_5px_rgba(255,0,0,0.8)] z-20 animate-pulse"
+                                style={{ top: '43%', left: '55%' }}
+                            >
+                                <div className="absolute top-1/2 left-1/2 w-[2000px] h-[20px] bg-red-500/60 -translate-y-1/2 blur-md origin-left animate-laser-scan" />
+                                <div className="absolute top-1/2 left-1/2 w-[2000px] h-[8px] bg-white/80 -translate-y-1/2 blur-sm origin-left animate-laser-scan" />
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
     );
