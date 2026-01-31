@@ -18,7 +18,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-screen bg-black text-foreground antialiased overflow-hidden`}>
+      <body className={`${inter.className} min-h-screen bg-black text-foreground antialiased`}>
         {children}
         <Toaster />
       </body>

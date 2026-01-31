@@ -15,9 +15,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
 async function handleRequest(req: NextRequest, pathArr: string[], method: string) {
     const backendUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://157.180.19.240:3000').replace(/\/$/, '');
+    const quantlabBaseUrl = (process.env.NEXT_PUBLIC_QUANTLAB_API_BASE_URL || process.env.QUANTLAB_API_BASE_URL || backendUrl).replace(/\/$/, '');
     const path = pathArr.join('/');
     const searchParams = req.nextUrl.searchParams.toString();
-    const targetUrl = `${backendUrl}/${path}${searchParams ? '?' + searchParams : ''}`;
+    const pathname = req.nextUrl.pathname;
+    const isQuantlabProxy = pathname.startsWith('/api/proxy/api/quantlab/');
+
+    // 🔓 QuantLab proxy is always public
+    if (!isQuantlabProxy) {
+        const hasAuth =
+            Boolean(req.headers.get('Authorization')) ||
+            Boolean(req.headers.get('Cookie')) ||
+            Boolean(req.headers.get('x-api-key'));
+
+        if (!hasAuth) {
+            return NextResponse.json(
+                { error: 'UNAUTHORIZED', message: 'Authentication required' },
+                { status: 401 }
+            );
+        }
+    } else {
+        console.log('🔓 [Proxy] QuantLab auth bypass ACTIVE:', pathname);
+    }
+
+    const baseUrl = pathname.startsWith('/api/proxy/api/quantlab/')
+        ? quantlabBaseUrl
+        : backendUrl;
+    const targetUrl = `${baseUrl}/${path}${searchParams ? '?' + searchParams : ''}`;
 
     console.log(`📡 [Proxy] ${method} -> ${targetUrl}`);
 
@@ -27,6 +51,7 @@ async function handleRequest(req: NextRequest, pathArr: string[], method: string
     if (authHeader) headers.set('Authorization', authHeader);
 
     const cookieHeader = req.headers.get('Cookie');
+    console.log(`🍪 [Proxy] Incoming Cookies: ${cookieHeader ? 'Present' : 'Missing'}`);
     if (cookieHeader) headers.set('Cookie', cookieHeader);
 
     const apiKey = req.headers.get('x-api-key');
@@ -39,11 +64,13 @@ async function handleRequest(req: NextRequest, pathArr: string[], method: string
             ? await req.text()
             : undefined;
 
+        console.log(`🚀 [Proxy] Fetching...`);
         const response = await fetch(targetUrl, {
             method,
             headers,
             body,
         });
+        console.log(`✅ [Proxy] Response Status: ${response.status}`);
 
         const responseHeaders = new Headers();
         // Forward content type
@@ -52,6 +79,7 @@ async function handleRequest(req: NextRequest, pathArr: string[], method: string
         // Forward Set-Cookie headers
         const setCookie = response.headers.get('set-cookie');
         if (setCookie) {
+            console.log(`🍪 [Proxy] Forwarding Set-Cookie`);
             responseHeaders.set('Set-Cookie', setCookie);
         }
 
@@ -69,8 +97,12 @@ async function handleRequest(req: NextRequest, pathArr: string[], method: string
             status: response.status,
             headers: responseHeaders,
         });
-    } catch (error) {
-        console.error('Proxy error:', error);
-        return NextResponse.json({ error: 'Proxy error', message: String(error) }, { status: 502 });
+    } catch (error: any) {
+        console.error('❌ [Proxy] Error:', error);
+        return NextResponse.json({
+            error: 'Proxy Error',
+            message: error.message,
+            stack: error.stack
+        }, { status: 500 });
     }
 }
